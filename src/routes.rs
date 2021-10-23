@@ -15,7 +15,7 @@ pub fn default(status: Status, _: &Request) -> StandardResponse {
 
 #[get("/analyze?<sentence>")]
 pub fn analyze(sentence: &str) -> StandardResponse<AnalysisResult> {
-    if sentence.len() <= 0 {
+    if sentence.is_empty() {
         return Fail(FailResponse::new(
             vec!["The sentence should be a non-empty string.".to_string()],
             Status::UnprocessableEntity,
@@ -23,6 +23,6 @@ pub fn analyze(sentence: &str) -> StandardResponse<AnalysisResult> {
     }
 
     Success(SuccessResponse::new(AnalysisResult {
-        morphemes: analyze_sentence(&sentence),
+        morphemes: analyze_sentence(sentence),
     }))
 }
