@@ -6,8 +6,11 @@ use rocket::response::{self, Responder, Response};
 use rocket::serde::json::json;
 use rocket::serde::Serialize;
 
+#[derive(Serialize)]
+#[serde(tag = "status", rename = "success")]
 pub struct SuccessResponse<T: Serialize> {
     data: T,
+    #[serde(skip_serializing)]
     http_status: Status,
 }
 
@@ -24,75 +27,78 @@ impl<T: Serialize> SuccessResponse<T> {
     }
 }
 
-pub struct FailResponse {
-    reasons: Vec<String>,
-    http_status: Status,
-}
-
-impl FailResponse {
-    pub fn new(reasons: Vec<String>, http_status: Status) -> FailResponse {
-        FailResponse {
-            reasons,
-            http_status,
-        }
-    }
-}
-
-pub struct ErrorResponse {
-    message: String,
-    http_status: Status,
-}
-
-impl ErrorResponse {
-    pub fn new(message: String, http_status: Status) -> ErrorResponse {
-        ErrorResponse {
-            message,
-            http_status,
-        }
-    }
-}
-
-pub enum StandardResponse<T: Serialize = ()> {
-    Success(SuccessResponse<T>),
-    Fail(FailResponse),
-    Error(ErrorResponse),
-}
-
-impl<'r, T: Serialize> Responder<'r, 'static> for StandardResponse<T> {
+impl<'r, T: Serialize> Responder<'r, 'static> for SuccessResponse<T> {
     fn respond_to(self, _: &'r Request<'_>) -> response::Result<'static> {
-        let (json, http_status) = match self {
-            StandardResponse::Success(r) => (
-                json!({
-                    "status": "success",
-                    "data": r.data
-                })
-                .to_string(),
-                r.http_status,
-            ),
-            StandardResponse::Fail(r) => (
-                json!({
-                    "status": "fail",
-                    "reasons": r.reasons
-                })
-                .to_string(),
-                r.http_status,
-            ),
-            StandardResponse::Error(r) => (
-                json!({
-                    "status": "error",
-                    "message": r.message
-                })
-                .to_string(),
-                r.http_status,
-            ),
-        };
+        let json = serde_json::to_string(&self).unwrap();
 
         Response::build()
             .sized_body(json.len(), Cursor::new(json))
             .header(ContentType::new("application", "json"))
-            .status(http_status)
+            .status(self.http_status)
             .ok()
     }
 }
 
-pub use self::StandardResponse::{Error, Fail, Success};
+#[derive(Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ErrorType {
+    Fail,
+    Error,
+}
+
+#[derive(Serialize)]
+pub struct ErrorResponse {
+    status: ErrorType,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasons: Option<Vec<String>>,
+    #[serde(skip_serializing)]
+    http_status: Status,
+}
+
+impl ErrorResponse {
+    pub fn error(message: String, http_status: Status) -> ErrorResponse {
+        ErrorResponse {
+            status: ErrorType::Error,
+            message,
+            reasons: None,
+            http_status,
+        }
+    }
+
+    pub fn fail(message: String, http_status: Status) -> ErrorResponse {
+        ErrorResponse {
+            status: ErrorType::Fail,
+            message,
+            reasons: None,
+            http_status,
+        }
+    }
+
+    pub fn fail_with_reasons(
+        message: String,
+        reasons: Vec<String>,
+        http_status: Status,
+    ) -> ErrorResponse {
+        ErrorResponse {
+            status: ErrorType::Fail,
+            message,
+            reasons: Some(reasons),
+            http_status,
+        }
+    }
+}
+
+impl<'r> Responder<'r, 'static> for ErrorResponse {
+    fn respond_to(self, _: &'r Request<'_>) -> response::Result<'static> {
+        let json = serde_json::to_string(&self).unwrap();
+
+        Response::build()
+            .sized_body(json.len(), Cursor::new(json))
+            .header(ContentType::new("application", "json"))
+            .status(self.http_status)
+            .ok()
+    }
+}
+
+pub type ResponseResult<T = ()> = Result<SuccessResponse<T>, ErrorResponse>;
