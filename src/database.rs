@@ -10,7 +10,6 @@ type Pool = r2d2::Pool<ConnectionManager<PgConnection>>;
 
 pub fn init_pool(database_url: String) -> Pool {
     let manager = ConnectionManager::<PgConnection>::new(database_url);
-
     Pool::new(manager).expect("Database pool")
 }
 
@@ -31,6 +30,7 @@ impl<'r> FromRequest<'r> for DbConnection {
 
 impl Deref for DbConnection {
     type Target = PgConnection;
+
     fn deref(&self) -> &Self::Target {
         &self.0
     }

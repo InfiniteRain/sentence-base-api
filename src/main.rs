@@ -18,8 +18,8 @@ async fn main() {
 
     rocket::build()
         .manage(database::init_pool(database_url))
-        .mount("/", routes![routes::analyze])
-        .register("/", catchers![routes::default])
+        .mount("/", routes![routes::analyzer::analyze])
+        .register("/", catchers![routes::catcher::default])
         .launch()
         .await;
 }
