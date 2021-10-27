@@ -1,6 +1,6 @@
 version: "3.1"
 services:
-  postgres:
+  db-prod:
     image: postgres:11-alpine
     restart: always
     environment:
@@ -9,3 +9,11 @@ services:
       POSTGRES_DB: rocket
     ports:
       - "5432:5432"
+  db-test:
+    image: postgres:11-alpine
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: rocket
+      POSTGRES_USER: rocket
+    ports:
+      - "5430:5432"
