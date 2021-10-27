@@ -1,10 +1,12 @@
 use crate::responses::ErrorResponse;
 use rocket::http::Status;
-use validator::{Validate, ValidationError, ValidationErrors, ValidationErrorsKind};
+use rocket::serde::json::Json;
+use validator::Validate;
 
-pub fn validate<T: Validate>(data: T) -> Result<(), ErrorResponse> {
+pub fn validate<T: Validate>(data: Json<T>) -> Result<T, ErrorResponse> {
+    let data = data.into_inner();
     match data.validate() {
-        Ok(_) => Ok(()),
+        Ok(_) => Ok(data),
         Err(err) => Err(ErrorResponse::fail_with_reasons(
             "Validation Error".to_string(),
             err.field_errors()
@@ -22,7 +24,7 @@ pub fn validate<T: Validate>(data: T) -> Result<(), ErrorResponse> {
                 })
                 .flatten()
                 .collect(),
-            Status::NotFound,
+            Status::UnprocessableEntity,
         )),
     }
 }

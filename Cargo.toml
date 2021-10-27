@@ -1,5 +1,5 @@
 [package]
-name = "sentence-base"
+name = "sentence_base"
 version = "0.1.0"
 edition = "2018"
 
@@ -12,3 +12,7 @@ dotenv = "0.15.0"
 diesel = { version = "1.4.2", features = ["postgres", "uuidv07", "r2d2" ] }
 r2d2 = "0.8.8"
 validator = { version = "0.12", features = ["derive"] }
+bcrypt = "0.10"
+
+[dev-dependencies]
+diesel_migrations = "1.4.0"
