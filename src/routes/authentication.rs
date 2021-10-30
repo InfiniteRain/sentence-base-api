@@ -1,13 +1,14 @@
 use crate::database;
 use crate::field_validator::validate;
+use crate::jwt::generate_authentication_token;
 use crate::models::user::{User, UserRegistrationError};
 use crate::responses::{ErrorResponse, ResponseResult, SuccessResponse};
 use rocket::http::Status;
-use rocket::serde::{json::Json, Deserialize};
+use rocket::serde::{json::Json, Deserialize, Serialize};
 use validator::Validate;
 
 #[derive(Validate, Deserialize)]
-pub struct NewUserData {
+pub struct RegisterRequest {
     #[validate(length(min = 3))]
     username: String,
     #[validate(email)]
@@ -18,8 +19,8 @@ pub struct NewUserData {
 
 #[post("/authenticate/register", format = "json", data = "<new_user>")]
 pub fn register(
-    new_user: Json<NewUserData>,
-    connection: database::DbConnection,
+    new_user: Json<RegisterRequest>,
+    database_connection: database::DbConnection,
 ) -> ResponseResult<User> {
     let new_user = validate(new_user)?;
 
@@ -27,7 +28,7 @@ pub fn register(
     let email = new_user.email.trim();
 
     let registration_result = User::register(
-        &connection,
+        &database_connection,
         username.to_string(),
         email.to_string(),
         new_user.password.to_string(),
@@ -45,4 +46,42 @@ pub fn register(
             Status::Conflict,
         )),
     }
+}
+
+#[derive(Validate, Deserialize)]
+pub struct AuthenticationRequest {
+    #[validate(email)]
+    email: String,
+    #[validate(length(min = 1))]
+    password: String,
+}
+
+#[derive(Serialize)]
+pub struct AuthenticationResponse {
+    token: String,
+}
+
+#[post("/authenticate", format = "json", data = "<authentication_request>")]
+pub fn authenticate(
+    authentication_request: Json<AuthenticationRequest>,
+    database_connection: database::DbConnection,
+) -> ResponseResult<AuthenticationResponse> {
+    let authentication_data = validate(authentication_request)?;
+
+    let email = authentication_data.email.trim().to_string();
+    let password = authentication_data.password;
+
+    let user =
+        User::find_by_credentials(&database_connection, email, password).ok_or_else(|| {
+            ErrorResponse::fail("Invalid Credentials".to_string(), Status::Unauthorized)
+        })?;
+
+    let token = generate_authentication_token(&user).ok_or_else(|| {
+        ErrorResponse::error(
+            "Failed to sign JWT".to_string(),
+            Status::InternalServerError,
+        )
+    })?;
+
+    Ok(SuccessResponse::new(AuthenticationResponse { token }))
 }

@@ -1,4 +1,4 @@
-use bcrypt::{hash, DEFAULT_COST};
+use bcrypt::{hash, verify, DEFAULT_COST};
 use diesel;
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
@@ -24,6 +24,7 @@ pub struct NewUser {
     pub hash: String,
 }
 
+#[derive(Debug)]
 pub enum UserRegistrationError {
     DuplicateEmail,
     DuplicateUsername,
@@ -45,12 +46,29 @@ impl From<Error> for UserRegistrationError {
 }
 
 impl User {
-    pub fn find_by_id(connection: &PgConnection, id: i32) -> Option<User> {
-        users::table.find(id).get_result(connection).ok()
+    pub fn find_by_id(database_connection: &PgConnection, id: i32) -> Option<User> {
+        users::table.find(id).get_result(database_connection).ok()
+    }
+
+    pub fn find_by_credentials(
+        database_connection: &PgConnection,
+        email: String,
+        password: String,
+    ) -> Option<User> {
+        let user = users::table
+            .filter(users::email.eq(email))
+            .get_result::<User>(database_connection)
+            .ok()?;
+
+        if verify(password, &user.hash).ok()? {
+            Some(user)
+        } else {
+            None
+        }
     }
 
     pub fn register(
-        connection: &PgConnection,
+        database_connection: &PgConnection,
         username: String,
         email: String,
         password: String,
@@ -68,7 +86,7 @@ impl User {
 
         diesel::insert_into(users::table)
             .values(&new_user)
-            .get_result::<User>(connection)
+            .get_result::<User>(database_connection)
             .map_err(Into::into)
     }
 }

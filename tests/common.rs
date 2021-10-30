@@ -5,6 +5,7 @@ use rocket::http::ContentType;
 use rocket::local::blocking::{Client, LocalResponse};
 use rocket::serde::json::Value;
 use sentence_base;
+use sentence_base::models::user::User;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static DATABASE_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -58,8 +59,31 @@ pub fn create_client() -> (Client, String) {
     )
 }
 
-pub fn create_database_connection(s: &String) -> PgConnection {
-    PgConnection::establish(&s).expect("database connection should be established")
+pub fn create_client_and_register_user(
+    username: &str,
+    email: &str,
+    password: &str,
+) -> (Client, User, PgConnection) {
+    let database_url = prepare_new_database();
+    let rocket = sentence_base::rocket(&database_url);
+    let database_connection = create_database_connection(&database_url);
+    let user = User::register(
+        &database_connection,
+        username.to_string(),
+        email.to_string(),
+        password.to_string(),
+    )
+    .expect("should register");
+
+    (
+        Client::tracked(rocket).expect("client should launch"),
+        user,
+        database_connection,
+    )
+}
+
+pub fn create_database_connection(connection_url: &String) -> PgConnection {
+    PgConnection::establish(&connection_url).expect("database connection should be established")
 }
 
 pub fn send_post_request_with_json<'a>(

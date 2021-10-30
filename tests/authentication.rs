@@ -1,8 +1,13 @@
 use bcrypt::verify;
 use common::*;
+use hmac::{Hmac, NewMac};
+use jwt::VerifyWithKey;
 use rocket::http::Status;
+use sentence_base::jwt::{get_jwt_expiry_time, get_jwt_secret, AuthenticationClaims};
 use sentence_base::models::user::User;
 use serde_json::json;
+use sha2::Sha256;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 mod common;
 
@@ -23,7 +28,7 @@ fn register_should_validate() {
         }),
     );
 
-    assert_eq!(response.status().code, 422);
+    assert_eq!(response.status(), Status::UnprocessableEntity);
 
     let json = response_to_json(response);
 
@@ -51,7 +56,7 @@ fn register_should_add_new_user() {
         }),
     );
 
-    assert_eq!(response.status().code, 200);
+    assert_eq!(response.status(), Status::Ok);
 
     let json = response_to_json(response);
 
@@ -129,4 +134,103 @@ fn register_should_fail_on_duplicate_data() {
     let email_duplicate_json = response_to_json(email_duplicate_response);
     assert_fail(&email_duplicate_json, "Validation Error");
     assert_fail_reasons(&email_duplicate_json, vec!["duplicate email".to_string()]);
+}
+
+#[test]
+fn authenticate_should_validate() {
+    let (client, _) = create_client();
+    let response = send_post_request_with_json(
+        &client,
+        "/authenticate",
+        json!({
+            "email": "",
+            "password": ""
+        }),
+    );
+
+    assert_eq!(response.status(), Status::UnprocessableEntity);
+
+    let json = response_to_json(response);
+
+    assert_fail(&json, "Validation Error");
+    assert_fail_reasons_validation_fields(&json, vec!["email".to_string(), "password".to_string()]);
+}
+
+#[test]
+fn authenticate_should_reject_on_wrong_creds() {
+    let (client, _, _) = create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+
+    let cred_combinations: [(&str, &str); 3] = [
+        ("wrong@domain.com", "wrong"),
+        (TEST_EMAIL, "wrong"),
+        ("wrong@domain.com", TEST_PASSWORD),
+    ];
+
+    for (username, password) in cred_combinations {
+        let response = send_post_request_with_json(
+            &client,
+            "/authenticate",
+            json!({
+                "email": username,
+                "password": password
+            }),
+        );
+
+        assert_eq!(response.status(), Status::Unauthorized);
+        let json = response_to_json(response);
+        assert_fail(&json, "Invalid Credentials");
+    }
+}
+
+#[test]
+fn authenticate_should_return_a_jwt() {
+    let (client, _, _) = create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+
+    let response = send_post_request_with_json(
+        &client,
+        "/authenticate",
+        json!({
+            "email": TEST_EMAIL,
+            "password": TEST_PASSWORD
+        }),
+    );
+
+    assert_eq!(response.status(), Status::Ok);
+
+    let json = response_to_json(response);
+
+    assert_success(&json);
+
+    let jwt_token = json
+        .get("data")
+        .expect("should include 'data' field")
+        .as_object()
+        .expect("'data' should be an object")
+        .get("token")
+        .expect("should include 'token' field")
+        .as_str()
+        .expect("'token' should be a string");
+
+    let jwt_secret = get_jwt_secret();
+    let jwt_expiry_time = get_jwt_expiry_time();
+    let hmac: Hmac<Sha256> =
+        Hmac::new_from_slice(jwt_secret.as_bytes()).expect("HMAC creation should succeed");
+    let claims: AuthenticationClaims = jwt_token
+        .verify_with_key(&hmac)
+        .expect("key should be verified");
+    let current_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    assert!(u64_diff(current_time, claims.iat) <= 10);
+    assert!(u64_diff(current_time + jwt_expiry_time, claims.exp) <= 10);
+}
+
+fn u64_diff(a: u64, b: u64) -> u64 {
+    if a < b {
+        b - a
+    } else {
+        a - b
+    }
 }
