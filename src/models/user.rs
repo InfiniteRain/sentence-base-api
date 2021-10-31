@@ -1,5 +1,5 @@
 use crate::database::Pool;
-use crate::jwt::{extract_token_from_header, validate_authentication_token, TokenValidationError};
+use crate::jwt::{extract_access_token_from_header, validate_access_token, AccessTokenError};
 use crate::schema::users;
 use bcrypt::{hash, verify, DEFAULT_COST};
 use diesel;
@@ -53,14 +53,14 @@ impl From<Error> for UserRegistrationError {
 
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for User {
-    type Error = TokenValidationError;
+    type Error = AccessTokenError;
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let authorization_header = request.headers().get("Authorization").collect::<String>();
 
-        let token = match extract_token_from_header(authorization_header) {
+        let token = match extract_access_token_from_header(authorization_header) {
             Some(token) => token,
-            None => return TokenValidationError::NoToken.outcome(request),
+            None => return AccessTokenError::NoToken.outcome(request),
         };
 
         let pool =
@@ -68,16 +68,16 @@ impl<'r> FromRequest<'r> for User {
                 .guard::<&State<Pool>>()
                 .await
                 .map_failure(|(status, _)| {
-                    request.local_cache(|| TokenValidationError::ServiceUnavailable);
-                    (status, TokenValidationError::ServiceUnavailable)
+                    request.local_cache(|| AccessTokenError::ServiceUnavailable);
+                    (status, AccessTokenError::ServiceUnavailable)
                 }));
 
         match pool.get() {
-            Ok(connection) => match validate_authentication_token(token, &connection) {
+            Ok(connection) => match validate_access_token(token, &connection) {
                 Ok(user) => Outcome::Success(user),
                 Err(error) => error.outcome(request),
             },
-            Err(_) => TokenValidationError::ServiceUnavailable.outcome(request),
+            Err(_) => AccessTokenError::ServiceUnavailable.outcome(request),
         }
     }
 }

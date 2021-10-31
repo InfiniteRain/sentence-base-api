@@ -1,6 +1,6 @@
 use crate::database;
 use crate::field_validator::validate;
-use crate::jwt::generate_authentication_token;
+use crate::jwt::generate_access_token;
 use crate::models::user::{User, UserRegistrationError};
 use crate::responses::{ErrorResponse, ResponseResult, SuccessResponse};
 use rocket::http::Status;
@@ -76,7 +76,7 @@ pub fn login(
             ErrorResponse::fail("Invalid Credentials".to_string(), Status::Unauthorized)
         })?;
 
-    let token = generate_authentication_token(&user).ok_or_else(|| {
+    let token = generate_access_token(&user).ok_or_else(|| {
         ErrorResponse::error(
             "Failed to sign JWT".to_string(),
             Status::InternalServerError,

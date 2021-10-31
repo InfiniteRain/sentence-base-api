@@ -2,7 +2,7 @@ use bcrypt::verify;
 use common::*;
 use jwt::{SignWithKey, VerifyWithKey};
 use rocket::http::Status;
-use sentence_base::jwt::{get_jwt_expiry_time, get_jwt_secret_hmac, AuthenticationClaims};
+use sentence_base::jwt::{get_access_token_expiry_time, get_jwt_secret_hmac, AccessClaims};
 use sentence_base::models::user::User;
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -210,8 +210,8 @@ fn login_should_return_a_jwt() {
         .expect("'token' should be a string");
 
     let jwt_secret_hmac = get_jwt_secret_hmac();
-    let jwt_expiry_time = get_jwt_expiry_time();
-    let claims: AuthenticationClaims = jwt_token
+    let jwt_expiry_time = get_access_token_expiry_time();
+    let claims: AccessClaims = jwt_token
         .verify_with_key(&jwt_secret_hmac)
         .expect("key should be verified");
     let current_time = SystemTime::now()
@@ -249,7 +249,7 @@ fn me_should_reject_future_iat_token() {
     let (client, _) = create_client();
 
     let current_timestamp = get_current_timestamp();
-    let token = generate_jwt_token(AuthenticationClaims {
+    let token = generate_jwt_token(AccessClaims {
         iat: current_timestamp + 10,
         exp: current_timestamp + 3610,
         sub: 0,
@@ -266,7 +266,7 @@ fn me_should_reject_expired_token() {
     let (client, _) = create_client();
 
     let current_timestamp = get_current_timestamp();
-    let token = generate_jwt_token(AuthenticationClaims {
+    let token = generate_jwt_token(AccessClaims {
         iat: current_timestamp,
         exp: current_timestamp - 3600,
         sub: 0,
@@ -283,7 +283,7 @@ fn me_should_reject_invalid_subject() {
     let (client, _) = create_client();
 
     let current_timestamp = get_current_timestamp();
-    let token = generate_jwt_token(AuthenticationClaims {
+    let token = generate_jwt_token(AccessClaims {
         iat: current_timestamp,
         exp: current_timestamp + 3600,
         sub: 0,
@@ -351,7 +351,7 @@ fn should_respect_token_generation() {
 
 fn generate_jwt_token_for_user(user: &User) -> String {
     let current_timestamp = get_current_timestamp();
-    generate_jwt_token(AuthenticationClaims {
+    generate_jwt_token(AccessClaims {
         iat: current_timestamp,
         exp: current_timestamp + 3600,
         sub: user.id,
@@ -359,7 +359,7 @@ fn generate_jwt_token_for_user(user: &User) -> String {
     })
 }
 
-fn generate_jwt_token(claims: AuthenticationClaims) -> String {
+fn generate_jwt_token(claims: AccessClaims) -> String {
     claims
         .sign_with_key(&get_jwt_secret_hmac())
         .expect("token should be signed")
