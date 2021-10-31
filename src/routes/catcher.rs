@@ -28,6 +28,10 @@ pub fn default(status: Status, request: &Request) -> ErrorResponse {
             "Token with Invalid Subject Provided".to_string(),
             Status::Unauthorized,
         ),
+        AccessTokenError::InvalidType => ErrorResponse::fail(
+            "Token with Invalid Type Provided".to_string(),
+            Status::Unauthorized,
+        ),
         _ => match status {
             s if s.code >= 400 && s.code < 500 => ErrorResponse::fail(s.to_string(), s),
             _ => ErrorResponse::error(status.to_string(), status),

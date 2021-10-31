@@ -30,6 +30,7 @@ pub struct AccessClaims {
     pub exp: u64,
     pub sub: i32,
     pub gen: i32,
+    pub typ: u8,
 }
 
 pub fn generate_access_token(user: &User) -> Option<String> {
@@ -43,6 +44,7 @@ pub fn generate_access_token(user: &User) -> Option<String> {
         exp: current_timestamp + get_access_token_expiry_time(),
         sub: user.id,
         gen: user.token_generation,
+        typ: 0,
     };
 
     claims.sign_with_key(&jwt_secret_hmac).ok()
@@ -58,6 +60,7 @@ pub enum AccessTokenError {
     Expired,
     Revoked,
     InvalidSubject,
+    InvalidType,
 }
 
 impl AccessTokenError {
@@ -79,6 +82,10 @@ pub fn validate_access_token(
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
+
+    if claims.typ != 0 {
+        return Err(AccessTokenError::InvalidType);
+    }
 
     if claims.iat > current_timestamp {
         return Err(AccessTokenError::IatInTheFuture);

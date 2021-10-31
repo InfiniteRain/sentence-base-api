@@ -254,6 +254,7 @@ fn me_should_reject_future_iat_token() {
         exp: current_timestamp + 3610,
         sub: 0,
         gen: 0,
+        typ: 0,
     });
     let response = send_get_request_with_auth(&client, "/auth/me", &token);
     assert_eq!(response.status(), Status::Unauthorized);
@@ -271,6 +272,7 @@ fn me_should_reject_expired_token() {
         exp: current_timestamp - 3600,
         sub: 0,
         gen: 0,
+        typ: 0,
     });
     let response = send_get_request_with_auth(&client, "/auth/me", &token);
     assert_eq!(response.status(), Status::Unauthorized);
@@ -288,11 +290,30 @@ fn me_should_reject_invalid_subject() {
         exp: current_timestamp + 3600,
         sub: 0,
         gen: 0,
+        typ: 0,
     });
     let response = send_get_request_with_auth(&client, "/auth/me", &token);
     assert_eq!(response.status(), Status::Unauthorized);
     let json = response_to_json(response);
     assert_fail(&json, "Token with Invalid Subject Provided");
+}
+
+#[test]
+fn me_should_reject_invalid_type() {
+    let (client, _) = create_client();
+
+    let current_timestamp = get_current_timestamp();
+    let token = generate_jwt_token(AccessClaims {
+        iat: current_timestamp,
+        exp: current_timestamp + 3600,
+        sub: 0,
+        gen: 0,
+        typ: 1,
+    });
+    let response = send_get_request_with_auth(&client, "/auth/me", &token);
+    assert_eq!(response.status(), Status::Unauthorized);
+    let json = response_to_json(response);
+    assert_fail(&json, "Token with Invalid Type Provided");
 }
 
 #[test]
@@ -356,6 +377,7 @@ fn generate_jwt_token_for_user(user: &User) -> String {
         exp: current_timestamp + 3600,
         sub: user.id,
         gen: 0,
+        typ: 0,
     })
 }
 
