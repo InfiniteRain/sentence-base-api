@@ -2,10 +2,13 @@ use bcrypt::verify;
 use common::*;
 use jwt::{SignWithKey, VerifyWithKey};
 use rocket::http::Status;
-use sentence_base::jwt::{get_access_token_expiry_time, get_jwt_secret_hmac, AccessClaims};
+use rocket::local::blocking::{Client, LocalResponse};
+use sentence_base::jwt::{
+    get_access_token_expiry_time, get_current_timestamp, get_jwt_secret_hmac,
+    get_refresh_token_expiry_time, TokenClaims, TokenType,
+};
 use sentence_base::models::user::User;
 use serde_json::json;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 mod common;
 
@@ -192,35 +195,24 @@ fn login_should_return_a_jwt() {
             "password": TEST_PASSWORD
         }),
     );
-
     assert_eq!(response.status(), Status::Ok);
-
     let json = response_to_json(response);
-
     assert_success(&json);
 
-    let jwt_token = json
-        .get("data")
-        .expect("should include 'data' field")
-        .as_object()
-        .expect("'data' should be an object")
-        .get("token")
-        .expect("should include 'token' field")
+    let data = json.get("data").unwrap().as_object().unwrap();
+    let access_token = data
+        .get("access_token")
+        .expect("should include 'access_token' field")
         .as_str()
-        .expect("'token' should be a string");
+        .expect("'access_token' should be a string");
+    let refresh_token = data
+        .get("refresh_token")
+        .expect("should include 'refresh_token' field")
+        .as_str()
+        .expect("'refresh_token' should be a string");
 
-    let jwt_secret_hmac = get_jwt_secret_hmac();
-    let jwt_expiry_time = get_access_token_expiry_time();
-    let claims: AccessClaims = jwt_token
-        .verify_with_key(&jwt_secret_hmac)
-        .expect("key should be verified");
-    let current_time = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-
-    assert!(u64_diff(current_time, claims.iat) <= 10);
-    assert!(u64_diff(current_time + jwt_expiry_time, claims.exp) <= 10);
+    assert_jwt_token(access_token, TokenType::Access);
+    assert_jwt_token(refresh_token, TokenType::Refresh);
 }
 
 #[test]
@@ -249,12 +241,12 @@ fn me_should_reject_future_iat_token() {
     let (client, _) = create_client();
 
     let current_timestamp = get_current_timestamp();
-    let token = generate_jwt_token(AccessClaims {
+    let token = generate_jwt_token(TokenClaims {
         iat: current_timestamp + 10,
         exp: current_timestamp + 3610,
         sub: 0,
         gen: 0,
-        typ: 0,
+        typ: TokenType::Access,
     });
     let response = send_get_request_with_auth(&client, "/auth/me", &token);
     assert_eq!(response.status(), Status::Unauthorized);
@@ -267,12 +259,12 @@ fn me_should_reject_expired_token() {
     let (client, _) = create_client();
 
     let current_timestamp = get_current_timestamp();
-    let token = generate_jwt_token(AccessClaims {
+    let token = generate_jwt_token(TokenClaims {
         iat: current_timestamp,
         exp: current_timestamp - 3600,
         sub: 0,
         gen: 0,
-        typ: 0,
+        typ: TokenType::Access,
     });
     let response = send_get_request_with_auth(&client, "/auth/me", &token);
     assert_eq!(response.status(), Status::Unauthorized);
@@ -285,12 +277,12 @@ fn me_should_reject_invalid_subject() {
     let (client, _) = create_client();
 
     let current_timestamp = get_current_timestamp();
-    let token = generate_jwt_token(AccessClaims {
+    let token = generate_jwt_token(TokenClaims {
         iat: current_timestamp,
         exp: current_timestamp + 3600,
         sub: 0,
         gen: 0,
-        typ: 0,
+        typ: TokenType::Access,
     });
     let response = send_get_request_with_auth(&client, "/auth/me", &token);
     assert_eq!(response.status(), Status::Unauthorized);
@@ -303,12 +295,12 @@ fn me_should_reject_invalid_type() {
     let (client, _) = create_client();
 
     let current_timestamp = get_current_timestamp();
-    let token = generate_jwt_token(AccessClaims {
+    let token = generate_jwt_token(TokenClaims {
         iat: current_timestamp,
         exp: current_timestamp + 3600,
         sub: 0,
         gen: 0,
-        typ: 1,
+        typ: TokenType::Refresh,
     });
     let response = send_get_request_with_auth(&client, "/auth/me", &token);
     assert_eq!(response.status(), Status::Unauthorized);
@@ -321,7 +313,7 @@ fn me_should_resolve_with_proper_token() {
     let (client, user, _) =
         create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
 
-    let token = generate_jwt_token_for_user(&user);
+    let token = generate_jwt_token_for_user(&user, TokenType::Access);
     let response = send_get_request_with_auth(&client, "/auth/me", &token);
     assert_eq!(response.status(), Status::Ok);
     let json = response_to_json(response);
@@ -355,43 +347,204 @@ fn me_should_resolve_with_proper_token() {
 }
 
 #[test]
+fn refresh_should_validate() {
+    let (client, _) = create_client();
+    let access_token = "".to_string();
+    let response = send_refresh_request(&client, &access_token);
+
+    assert_eq!(response.status(), Status::UnprocessableEntity);
+
+    let json = response_to_json(response);
+
+    assert_fail(&json, "Validation Error");
+    assert_fail_reasons_validation_fields(&json, vec!["refresh_token".to_string()]);
+}
+
+#[test]
+fn refresh_should_reject_malformed_token() {
+    let (client, _) = create_client();
+
+    let access_token = "wrong token".to_string();
+    let response = send_refresh_request(&client, &access_token);
+    assert_eq!(response.status(), Status::Unauthorized);
+    let json = response_to_json(response);
+    assert_fail(&json, "Malformed Token Provided");
+}
+
+#[test]
+fn refresh_should_reject_future_iat_token() {
+    let (client, _) = create_client();
+
+    let current_timestamp = get_current_timestamp();
+    let token = generate_jwt_token(TokenClaims {
+        iat: current_timestamp + 10,
+        exp: current_timestamp + 3610,
+        sub: 0,
+        gen: 0,
+        typ: TokenType::Refresh,
+    });
+    let response = send_refresh_request(&client, &token);
+    assert_eq!(response.status(), Status::Unauthorized);
+    let json = response_to_json(response);
+    assert_fail(&json, "Token with IAT in the Future Provided");
+}
+
+#[test]
+fn refresh_should_reject_expired_token() {
+    let (client, _) = create_client();
+
+    let current_timestamp = get_current_timestamp();
+    let token = generate_jwt_token(TokenClaims {
+        iat: current_timestamp,
+        exp: current_timestamp - 3600,
+        sub: 0,
+        gen: 0,
+        typ: TokenType::Refresh,
+    });
+    let response = send_refresh_request(&client, &token);
+    assert_eq!(response.status(), Status::Unauthorized);
+    let json = response_to_json(response);
+    assert_fail(&json, "Expired Token Provided");
+}
+
+#[test]
+fn refresh_should_reject_invalid_subject() {
+    let (client, _) = create_client();
+
+    let current_timestamp = get_current_timestamp();
+    let token = generate_jwt_token(TokenClaims {
+        iat: current_timestamp,
+        exp: current_timestamp + 3600,
+        sub: 0,
+        gen: 0,
+        typ: TokenType::Refresh,
+    });
+    let response = send_refresh_request(&client, &token);
+    assert_eq!(response.status(), Status::Unauthorized);
+    let json = response_to_json(response);
+    assert_fail(&json, "Token with Invalid Subject Provided");
+}
+
+#[test]
+fn refresh_should_reject_invalid_type() {
+    let (client, _) = create_client();
+
+    let current_timestamp = get_current_timestamp();
+    let token = generate_jwt_token(TokenClaims {
+        iat: current_timestamp,
+        exp: current_timestamp + 3600,
+        sub: 0,
+        gen: 0,
+        typ: TokenType::Access,
+    });
+    let response = send_refresh_request(&client, &token);
+    assert_eq!(response.status(), Status::Unauthorized);
+    let json = response_to_json(response);
+    assert_fail(&json, "Token with Invalid Type Provided");
+}
+
+#[test]
+fn refresh_should_resolve_with_proper_token() {
+    let (client, user, _) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+
+    let token = generate_jwt_token_for_user(&user, TokenType::Refresh);
+    let response = send_refresh_request(&client, &token);
+    assert_eq!(response.status(), Status::Ok);
+    let json = response_to_json(response);
+    assert_success(&json);
+
+    let data = json.get("data").unwrap().as_object().unwrap();
+    let access_token = data
+        .get("access_token")
+        .expect("should include 'access_token' field")
+        .as_str()
+        .expect("'access_token' should be a string");
+    let refresh_token = data
+        .get("refresh_token")
+        .expect("should include 'refresh_token' field")
+        .as_str()
+        .expect("'refresh_token' should be a string");
+
+    assert_jwt_token(access_token, TokenType::Access);
+    assert_jwt_token(refresh_token, TokenType::Refresh);
+}
+
+#[test]
 fn should_respect_token_generation() {
     let (client, user, database_connection) =
         create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
-    let token = generate_jwt_token_for_user(&user);
+    let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
+    let refresh_token = generate_jwt_token_for_user(&user, TokenType::Refresh);
 
-    let first_response = send_get_request_with_auth(&client, "/auth/me", &token);
-    assert_eq!(first_response.status(), Status::Ok);
+    let first_me_response = send_get_request_with_auth(&client, "/auth/me", &access_token);
+    assert_eq!(first_me_response.status(), Status::Ok);
+    let first_refresh_response = send_refresh_request(&client, &refresh_token);
+    assert_eq!(first_refresh_response.status(), Status::Ok);
+
     assert_eq!(user.increment_token_generation(&database_connection), Ok(1));
 
-    let second_response = send_get_request_with_auth(&client, "/auth/me", &token);
-    assert_eq!(second_response.status(), Status::Unauthorized);
-    let second_response_json = response_to_json(second_response);
-    assert_fail(&second_response_json, "Revoked Token Provided");
+    let second_me_response = send_get_request_with_auth(&client, "/auth/me", &access_token);
+    assert_eq!(second_me_response.status(), Status::Unauthorized);
+    let second_refresh_response = send_refresh_request(&client, &refresh_token);
+    assert_eq!(second_refresh_response.status(), Status::Unauthorized);
+
+    let second_me_response_json = response_to_json(second_me_response);
+    assert_fail(&second_me_response_json, "Revoked Token Provided");
+    let second_refresh_response_json = response_to_json(second_refresh_response);
+    assert_fail(&second_refresh_response_json, "Revoked Token Provided");
 }
 
-fn generate_jwt_token_for_user(user: &User) -> String {
+fn send_refresh_request<'a>(client: &'a Client, token: &'a String) -> LocalResponse<'a> {
+    send_post_request_with_json(
+        &client,
+        "/auth/refresh",
+        json!({
+            "refresh_token": token,
+        }),
+    )
+}
+
+fn assert_jwt_token(token: &str, token_type: TokenType) {
+    let jwt_secret_hmac = get_jwt_secret_hmac();
+    let claims: TokenClaims = token
+        .verify_with_key(&jwt_secret_hmac)
+        .expect("key should be verified");
+    let current_time = get_current_timestamp();
+    let expiry_time = match token_type {
+        TokenType::Access => get_access_token_expiry_time(),
+        TokenType::Refresh => get_refresh_token_expiry_time(),
+    };
+
+    assert!(
+        u64_diff(current_time, claims.iat) <= 10,
+        "expected iat: {}, claimed: {}",
+        current_time,
+        claims.iat,
+    );
+    assert!(
+        u64_diff(current_time + expiry_time, claims.exp) <= 10,
+        "expected expiry time: {}, claimed: {}",
+        current_time + expiry_time,
+        claims.exp,
+    );
+}
+
+fn generate_jwt_token_for_user(user: &User, token_type: TokenType) -> String {
     let current_timestamp = get_current_timestamp();
-    generate_jwt_token(AccessClaims {
+    generate_jwt_token(TokenClaims {
         iat: current_timestamp,
         exp: current_timestamp + 3600,
         sub: user.id,
         gen: 0,
-        typ: 0,
+        typ: token_type,
     })
 }
 
-fn generate_jwt_token(claims: AccessClaims) -> String {
+fn generate_jwt_token(claims: TokenClaims) -> String {
     claims
         .sign_with_key(&get_jwt_secret_hmac())
         .expect("token should be signed")
-}
-
-fn get_current_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
 }
 
 fn u64_diff(a: u64, b: u64) -> u64 {

@@ -1,5 +1,5 @@
 use crate::database::Pool;
-use crate::jwt::{extract_access_token_from_header, validate_access_token, AccessTokenError};
+use crate::jwt::{extract_access_token_from_header, validate_token, TokenError, TokenType};
 use crate::schema::users;
 use bcrypt::{hash, verify, DEFAULT_COST};
 use diesel;
@@ -53,14 +53,14 @@ impl From<Error> for UserRegistrationError {
 
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for User {
-    type Error = AccessTokenError;
+    type Error = TokenError;
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let authorization_header = request.headers().get("Authorization").collect::<String>();
 
         let token = match extract_access_token_from_header(authorization_header) {
             Some(token) => token,
-            None => return AccessTokenError::NoToken.outcome(request),
+            None => return TokenError::NoToken.outcome(request),
         };
 
         let pool =
@@ -68,16 +68,16 @@ impl<'r> FromRequest<'r> for User {
                 .guard::<&State<Pool>>()
                 .await
                 .map_failure(|(status, _)| {
-                    request.local_cache(|| AccessTokenError::ServiceUnavailable);
-                    (status, AccessTokenError::ServiceUnavailable)
+                    request.local_cache(|| TokenError::None);
+                    (status, TokenError::None)
                 }));
 
         match pool.get() {
-            Ok(connection) => match validate_access_token(token, &connection) {
+            Ok(connection) => match validate_token(token, TokenType::Access, &connection) {
                 Ok(user) => Outcome::Success(user),
                 Err(error) => error.outcome(request),
             },
-            Err(_) => AccessTokenError::ServiceUnavailable.outcome(request),
+            Err(_) => TokenError::None.outcome(request),
         }
     }
 }
