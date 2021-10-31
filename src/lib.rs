@@ -24,7 +24,8 @@ pub fn rocket(database_url: &str) -> Rocket<Build> {
             routes![
                 routes::analyzer::analyze,
                 routes::authentication::register,
-                routes::authentication::authenticate
+                routes::authentication::login,
+                routes::authentication::me
             ],
         )
         .register("/", catchers![routes::catcher::default])

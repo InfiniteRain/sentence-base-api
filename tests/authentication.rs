@@ -1,12 +1,10 @@
 use bcrypt::verify;
 use common::*;
-use hmac::{Hmac, NewMac};
-use jwt::VerifyWithKey;
+use jwt::{SignWithKey, VerifyWithKey};
 use rocket::http::Status;
-use sentence_base::jwt::{get_jwt_expiry_time, get_jwt_secret, AuthenticationClaims};
+use sentence_base::jwt::{get_jwt_expiry_time, get_jwt_secret_hmac, AuthenticationClaims};
 use sentence_base::models::user::User;
 use serde_json::json;
-use sha2::Sha256;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod common;
@@ -20,7 +18,7 @@ fn register_should_validate() {
     let (client, _) = create_client();
     let response = send_post_request_with_json(
         &client,
-        "/authenticate/register",
+        "/auth/register",
         json!({
             "username": "",
             "email": "",
@@ -48,7 +46,7 @@ fn register_should_add_new_user() {
     let (client, database_url) = create_client();
     let response = send_post_request_with_json(
         &client,
-        "/authenticate/register",
+        "/auth/register",
         json!({
             "username": TEST_USERNAME,
             "email": TEST_EMAIL,
@@ -92,7 +90,7 @@ fn register_should_fail_on_duplicate_data() {
     let (client, _) = create_client();
     let registration_response = send_post_request_with_json(
         &client,
-        "/authenticate/register",
+        "/auth/register",
         json!({
             "username": TEST_USERNAME,
             "email": TEST_EMAIL,
@@ -104,7 +102,7 @@ fn register_should_fail_on_duplicate_data() {
 
     let username_duplicate_response = send_post_request_with_json(
         &client,
-        "/authenticate/register",
+        "/auth/register",
         json!({
             "username": TEST_USERNAME,
             "email": "different@domain.com",
@@ -122,7 +120,7 @@ fn register_should_fail_on_duplicate_data() {
 
     let email_duplicate_response = send_post_request_with_json(
         &client,
-        "/authenticate/register",
+        "/auth/register",
         json!({
             "username": "different_test",
             "email": TEST_EMAIL,
@@ -137,11 +135,11 @@ fn register_should_fail_on_duplicate_data() {
 }
 
 #[test]
-fn authenticate_should_validate() {
+fn login_should_validate() {
     let (client, _) = create_client();
     let response = send_post_request_with_json(
         &client,
-        "/authenticate",
+        "/auth/login",
         json!({
             "email": "",
             "password": ""
@@ -157,7 +155,7 @@ fn authenticate_should_validate() {
 }
 
 #[test]
-fn authenticate_should_reject_on_wrong_creds() {
+fn login_should_reject_on_wrong_creds() {
     let (client, _, _) = create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
 
     let cred_combinations: [(&str, &str); 3] = [
@@ -169,7 +167,7 @@ fn authenticate_should_reject_on_wrong_creds() {
     for (username, password) in cred_combinations {
         let response = send_post_request_with_json(
             &client,
-            "/authenticate",
+            "/auth/login",
             json!({
                 "email": username,
                 "password": password
@@ -183,12 +181,12 @@ fn authenticate_should_reject_on_wrong_creds() {
 }
 
 #[test]
-fn authenticate_should_return_a_jwt() {
+fn login_should_return_a_jwt() {
     let (client, _, _) = create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
 
     let response = send_post_request_with_json(
         &client,
-        "/authenticate",
+        "/auth/login",
         json!({
             "email": TEST_EMAIL,
             "password": TEST_PASSWORD
@@ -211,12 +209,10 @@ fn authenticate_should_return_a_jwt() {
         .as_str()
         .expect("'token' should be a string");
 
-    let jwt_secret = get_jwt_secret();
+    let jwt_secret_hmac = get_jwt_secret_hmac();
     let jwt_expiry_time = get_jwt_expiry_time();
-    let hmac: Hmac<Sha256> =
-        Hmac::new_from_slice(jwt_secret.as_bytes()).expect("HMAC creation should succeed");
     let claims: AuthenticationClaims = jwt_token
-        .verify_with_key(&hmac)
+        .verify_with_key(&jwt_secret_hmac)
         .expect("key should be verified");
     let current_time = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -225,6 +221,135 @@ fn authenticate_should_return_a_jwt() {
 
     assert!(u64_diff(current_time, claims.iat) <= 10);
     assert!(u64_diff(current_time + jwt_expiry_time, claims.exp) <= 10);
+}
+
+#[test]
+fn me_should_reject_no_token() {
+    let (client, _) = create_client();
+
+    let response = send_get_request(&client, "/auth/me");
+    assert_eq!(response.status(), Status::Unauthorized);
+    let json = response_to_json(response);
+    assert_fail(&json, "No Token Provided");
+}
+
+#[test]
+fn me_should_reject_malformed_token() {
+    let (client, _) = create_client();
+
+    let token = "wrong token".to_string();
+    let response = send_get_request_with_auth(&client, "/auth/me", &token);
+    assert_eq!(response.status(), Status::Unauthorized);
+    let json = response_to_json(response);
+    assert_fail(&json, "Malformed Token Provided");
+}
+
+#[test]
+fn me_should_reject_future_iat_token() {
+    let (client, _) = create_client();
+
+    let current_timestamp = get_current_timestamp();
+    let token = generate_jwt_token(AuthenticationClaims {
+        iat: current_timestamp + 10,
+        exp: current_timestamp + 3610,
+        sub: 0,
+    });
+    let response = send_get_request_with_auth(&client, "/auth/me", &token);
+    assert_eq!(response.status(), Status::Unauthorized);
+    let json = response_to_json(response);
+    assert_fail(&json, "Token with IAT in the Future Provided");
+}
+
+#[test]
+fn me_should_reject_expired_token() {
+    let (client, _) = create_client();
+
+    let current_timestamp = get_current_timestamp();
+    let token = generate_jwt_token(AuthenticationClaims {
+        iat: current_timestamp,
+        exp: current_timestamp - 3600,
+        sub: 0,
+    });
+    let response = send_get_request_with_auth(&client, "/auth/me", &token);
+    assert_eq!(response.status(), Status::Unauthorized);
+    let json = response_to_json(response);
+    assert_fail(&json, "Expired Token Provided");
+}
+
+#[test]
+fn me_should_reject_invalid_subject() {
+    let (client, _) = create_client();
+
+    let current_timestamp = get_current_timestamp();
+    let token = generate_jwt_token(AuthenticationClaims {
+        iat: current_timestamp,
+        exp: current_timestamp + 3600,
+        sub: 0,
+    });
+    let response = send_get_request_with_auth(&client, "/auth/me", &token);
+    assert_eq!(response.status(), Status::Unauthorized);
+    let json = response_to_json(response);
+    assert_fail(&json, "Token with Invalid Subject Provided");
+}
+
+#[test]
+fn me_should_resolve_with_proper_token() {
+    let (client, user, _) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+
+    let token = generate_jwt_token_for_user(&user);
+    let response = send_get_request_with_auth(&client, "/auth/me", &token);
+    assert_eq!(response.status(), Status::Ok);
+    let json = response_to_json(response);
+    assert_success(&json);
+
+    let data = json.get("data").unwrap().as_object().unwrap();
+
+    let username = data
+        .get("username")
+        .expect("should include 'username' field")
+        .as_str()
+        .expect("'username' should be a string");
+
+    assert_eq!(username, user.username);
+
+    let email = data
+        .get("email")
+        .expect("should include 'email' field")
+        .as_str()
+        .expect("'email' should be a string");
+
+    assert_eq!(email, user.email);
+
+    let id = data
+        .get("id")
+        .expect("should include 'id' field")
+        .as_u64()
+        .expect("'id' should be an integer");
+
+    assert_eq!(id, user.id as u64);
+}
+
+fn generate_jwt_token_for_user(user: &User) -> String {
+    let current_timestamp = get_current_timestamp();
+    generate_jwt_token(AuthenticationClaims {
+        iat: current_timestamp,
+        exp: current_timestamp + 3600,
+        sub: user.id,
+    })
+}
+
+fn generate_jwt_token(claims: AuthenticationClaims) -> String {
+    claims
+        .sign_with_key(&get_jwt_secret_hmac())
+        .expect("token should be signed")
+}
+
+fn get_current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 fn u64_diff(a: u64, b: u64) -> u64 {

@@ -1,7 +1,8 @@
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use diesel::sql_query;
-use rocket::http::ContentType;
+use rocket::http::hyper::header::AUTHORIZATION;
+use rocket::http::{ContentType, Header};
 use rocket::local::blocking::{Client, LocalResponse};
 use rocket::serde::json::Value;
 use sentence_base;
@@ -95,6 +96,21 @@ pub fn send_post_request_with_json<'a>(
         .post(url)
         .header(ContentType::JSON)
         .body(json.to_string())
+        .dispatch()
+}
+
+pub fn send_get_request<'a>(client: &'a Client, url: &'a str) -> LocalResponse<'a> {
+    client.get(url).dispatch()
+}
+
+pub fn send_get_request_with_auth<'a>(
+    client: &'a Client,
+    url: &'a str,
+    token: &String,
+) -> LocalResponse<'a> {
+    client
+        .get(url)
+        .header(Header::new("Authorization", format!("Bearer {}", &token)))
         .dispatch()
 }
 

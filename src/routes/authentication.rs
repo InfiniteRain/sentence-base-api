@@ -17,7 +17,7 @@ pub struct RegisterRequest {
     password: String,
 }
 
-#[post("/authenticate/register", format = "json", data = "<new_user>")]
+#[post("/auth/register", format = "json", data = "<new_user>")]
 pub fn register(
     new_user: Json<RegisterRequest>,
     database_connection: database::DbConnection,
@@ -61,8 +61,8 @@ pub struct AuthenticationResponse {
     token: String,
 }
 
-#[post("/authenticate", format = "json", data = "<authentication_request>")]
-pub fn authenticate(
+#[post("/auth/login", format = "json", data = "<authentication_request>")]
+pub fn login(
     authentication_request: Json<AuthenticationRequest>,
     database_connection: database::DbConnection,
 ) -> ResponseResult<AuthenticationResponse> {
@@ -84,4 +84,9 @@ pub fn authenticate(
     })?;
 
     Ok(SuccessResponse::new(AuthenticationResponse { token }))
+}
+
+#[get("/auth/me")]
+pub fn me(user: User) -> ResponseResult<User> {
+    Ok(SuccessResponse::new(user))
 }

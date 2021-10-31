@@ -5,7 +5,7 @@ use rocket::request::Request;
 use rocket::response::{self, Responder, Response};
 use rocket::serde::Serialize;
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(tag = "status", rename = "success")]
 pub struct SuccessResponse<T: Serialize> {
     data: T,
@@ -28,24 +28,18 @@ impl<T: Serialize> SuccessResponse<T> {
 
 impl<'r, T: Serialize> Responder<'r, 'static> for SuccessResponse<T> {
     fn respond_to(self, _: &'r Request<'_>) -> response::Result<'static> {
-        let json = serde_json::to_string(&self).unwrap();
-
-        Response::build()
-            .sized_body(json.len(), Cursor::new(json))
-            .header(ContentType::new("application", "json"))
-            .status(self.http_status)
-            .ok()
+        generate_response(&self, self.http_status)
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum ErrorType {
     Fail,
     Error,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct ErrorResponse {
     status: ErrorType,
     message: String,
@@ -90,14 +84,21 @@ impl ErrorResponse {
 
 impl<'r> Responder<'r, 'static> for ErrorResponse {
     fn respond_to(self, _: &'r Request<'_>) -> response::Result<'static> {
-        let json = serde_json::to_string(&self).unwrap();
-
-        Response::build()
-            .sized_body(json.len(), Cursor::new(json))
-            .header(ContentType::new("application", "json"))
-            .status(self.http_status)
-            .ok()
+        generate_response(&self, self.http_status)
     }
+}
+
+fn generate_response<T: Serialize>(
+    responder: &T,
+    http_status: Status,
+) -> response::Result<'static> {
+    let json = serde_json::to_string(&responder).unwrap();
+
+    Response::build()
+        .sized_body(json.len(), Cursor::new(json))
+        .header(ContentType::new("application", "json"))
+        .status(http_status)
+        .ok()
 }
 
 pub type ResponseResult<T = ()> = Result<SuccessResponse<T>, ErrorResponse>;

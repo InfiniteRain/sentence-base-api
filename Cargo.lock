@@ -1260,6 +1260,7 @@ dependencies = [
  "jwt",
  "mecab",
  "r2d2",
+ "regex",
  "rocket",
  "serde",
  "serde_json",
