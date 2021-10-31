@@ -4,5 +4,6 @@ table! {
         username -> Text,
         email -> Text,
         hash -> Text,
+        token_generation -> Int4,
     }
 }

@@ -1,7 +1,6 @@
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use diesel::sql_query;
-use rocket::http::hyper::header::AUTHORIZATION;
 use rocket::http::{ContentType, Header};
 use rocket::local::blocking::{Client, LocalResponse};
 use rocket::serde::json::Value;

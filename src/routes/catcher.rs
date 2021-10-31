@@ -14,6 +14,9 @@ pub fn default(status: Status, request: &Request) -> ErrorResponse {
         TokenValidationError::MalformedToken => {
             ErrorResponse::fail("Malformed Token Provided".to_string(), Status::Unauthorized)
         }
+        TokenValidationError::Revoked => {
+            ErrorResponse::fail("Revoked Token Provided".to_string(), Status::Unauthorized)
+        }
         TokenValidationError::IatInTheFuture => ErrorResponse::fail(
             "Token with IAT in the Future Provided".to_string(),
             Status::Unauthorized,

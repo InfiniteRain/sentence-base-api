@@ -29,6 +29,7 @@ pub struct AuthenticationClaims {
     pub iat: u64,
     pub exp: u64,
     pub sub: i32,
+    pub gen: i32,
 }
 
 pub fn generate_authentication_token(user: &User) -> Option<String> {
@@ -41,6 +42,7 @@ pub fn generate_authentication_token(user: &User) -> Option<String> {
         iat: current_timestamp,
         exp: current_timestamp + get_jwt_expiry_time(),
         sub: user.id,
+        gen: user.token_generation,
     };
 
     claims.sign_with_key(&jwt_secret_hmac).ok()
@@ -54,6 +56,7 @@ pub enum TokenValidationError {
     MalformedToken,
     IatInTheFuture,
     Expired,
+    Revoked,
     InvalidSubject,
 }
 
@@ -85,8 +88,14 @@ pub fn validate_authentication_token(
         return Err(TokenValidationError::Expired);
     }
 
-    User::find_by_id(database_connection, claims.sub)
-        .ok_or_else(|| TokenValidationError::InvalidSubject)
+    let user = User::find_by_id(database_connection, claims.sub)
+        .ok_or(TokenValidationError::InvalidSubject)?;
+
+    if claims.gen != user.token_generation {
+        return Err(TokenValidationError::Revoked);
+    }
+
+    Ok(user)
 }
 
 pub fn extract_token_from_header(authorization_header: String) -> Option<String> {

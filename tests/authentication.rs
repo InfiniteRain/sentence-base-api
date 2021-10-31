@@ -253,6 +253,7 @@ fn me_should_reject_future_iat_token() {
         iat: current_timestamp + 10,
         exp: current_timestamp + 3610,
         sub: 0,
+        gen: 0,
     });
     let response = send_get_request_with_auth(&client, "/auth/me", &token);
     assert_eq!(response.status(), Status::Unauthorized);
@@ -269,6 +270,7 @@ fn me_should_reject_expired_token() {
         iat: current_timestamp,
         exp: current_timestamp - 3600,
         sub: 0,
+        gen: 0,
     });
     let response = send_get_request_with_auth(&client, "/auth/me", &token);
     assert_eq!(response.status(), Status::Unauthorized);
@@ -285,6 +287,7 @@ fn me_should_reject_invalid_subject() {
         iat: current_timestamp,
         exp: current_timestamp + 3600,
         sub: 0,
+        gen: 0,
     });
     let response = send_get_request_with_auth(&client, "/auth/me", &token);
     assert_eq!(response.status(), Status::Unauthorized);
@@ -330,12 +333,29 @@ fn me_should_resolve_with_proper_token() {
     assert_eq!(id, user.id as u64);
 }
 
+#[test]
+fn should_respect_token_generation() {
+    let (client, user, database_connection) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+    let token = generate_jwt_token_for_user(&user);
+
+    let first_response = send_get_request_with_auth(&client, "/auth/me", &token);
+    assert_eq!(first_response.status(), Status::Ok);
+    assert_eq!(user.increment_token_generation(&database_connection), Ok(1));
+
+    let second_response = send_get_request_with_auth(&client, "/auth/me", &token);
+    assert_eq!(second_response.status(), Status::Unauthorized);
+    let second_response_json = response_to_json(second_response);
+    assert_fail(&second_response_json, "Revoked Token Provided");
+}
+
 fn generate_jwt_token_for_user(user: &User) -> String {
     let current_timestamp = get_current_timestamp();
     generate_jwt_token(AuthenticationClaims {
         iat: current_timestamp,
         exp: current_timestamp + 3600,
         sub: user.id,
+        gen: 0,
     })
 }
 

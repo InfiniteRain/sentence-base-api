@@ -1,5 +1,6 @@
 use crate::database::Pool;
 use crate::jwt::{extract_token_from_header, validate_authentication_token, TokenValidationError};
+use crate::schema::users;
 use bcrypt::{hash, verify, DEFAULT_COST};
 use diesel;
 use diesel::pg::PgConnection;
@@ -10,15 +11,15 @@ use rocket::request::{FromRequest, Outcome, Request};
 use rocket::serde::Serialize;
 use rocket::State;
 
-use crate::schema::users;
-
-#[derive(Queryable, Serialize)]
+#[derive(Queryable, Serialize, Identifiable, AsChangeset)]
 pub struct User {
     pub id: i32,
     pub username: String,
     pub email: String,
     #[serde(skip_serializing)]
     pub hash: String,
+    #[serde(skip_serializing)]
+    pub token_generation: i32,
 }
 
 #[derive(Insertable)]
@@ -59,7 +60,7 @@ impl<'r> FromRequest<'r> for User {
 
         let token = match extract_token_from_header(authorization_header) {
             Some(token) => token,
-            None => return TokenValidationError::NoToken.outcome(&request),
+            None => return TokenValidationError::NoToken.outcome(request),
         };
 
         let pool =
@@ -74,16 +75,19 @@ impl<'r> FromRequest<'r> for User {
         match pool.get() {
             Ok(connection) => match validate_authentication_token(token, &connection) {
                 Ok(user) => Outcome::Success(user),
-                Err(error) => error.outcome(&request),
+                Err(error) => error.outcome(request),
             },
-            Err(_) => TokenValidationError::ServiceUnavailable.outcome(&request),
+            Err(_) => TokenValidationError::ServiceUnavailable.outcome(request),
         }
     }
 }
 
 impl User {
-    pub fn find_by_id(database_connection: &PgConnection, id: i32) -> Option<User> {
-        users::table.find(id).get_result(database_connection).ok()
+    pub fn find_by_id(database_connection: &PgConnection, user_id: i32) -> Option<User> {
+        users::table
+            .find(user_id)
+            .get_result(database_connection)
+            .ok()
     }
 
     pub fn find_by_credentials(
@@ -124,5 +128,15 @@ impl User {
             .values(&new_user)
             .get_result::<User>(database_connection)
             .map_err(Into::into)
+    }
+
+    pub fn increment_token_generation(
+        mut self,
+        database_connection: &PgConnection,
+    ) -> Result<i32, Error> {
+        self.token_generation += 1;
+        self.save_changes::<User>(database_connection)?;
+
+        Ok(self.token_generation)
     }
 }
