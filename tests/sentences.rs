@@ -3,7 +3,7 @@ use diesel::QueryDsl;
 use diesel::RunQueryDsl;
 use diesel::{BelongingToDsl, ExpressionMethods};
 use rocket::http::Status;
-use sentence_base::env::get_maximum_pending_sentences;
+use sentence_base::helpers::get_maximum_pending_sentences;
 use sentence_base::jwt::TokenType;
 use sentence_base::models::sentence::Sentence;
 use sentence_base::models::word::Word;

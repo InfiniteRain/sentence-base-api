@@ -3,7 +3,7 @@ use common::*;
 use jwt::VerifyWithKey;
 use rocket::http::Status;
 use rocket::local::blocking::{Client, LocalResponse};
-use sentence_base::env::{get_access_token_expiry_time, get_refresh_token_expiry_time};
+use sentence_base::helpers::{get_access_token_expiry_time, get_refresh_token_expiry_time};
 use sentence_base::jwt::{get_current_timestamp, get_jwt_secret_hmac, TokenClaims, TokenType};
 use sentence_base::models::user::User;
 use serde_json::json;

@@ -1,5 +1,5 @@
 use crate::database::Pool;
-use crate::env::get_maximum_pending_sentences;
+use crate::helpers::get_maximum_pending_sentences;
 use crate::jwt::{extract_access_token_from_header, validate_token, TokenError, TokenType};
 use crate::models::sentence::Sentence;
 use crate::schema::sentences::columns::is_pending;

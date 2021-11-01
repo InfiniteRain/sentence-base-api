@@ -7,8 +7,8 @@ use rocket::{Build, Rocket};
 
 mod analyzer;
 mod database;
-pub mod env;
 mod field_validator;
+pub mod helpers;
 pub mod jwt;
 pub mod models;
 mod responses;
