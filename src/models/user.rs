@@ -1,8 +1,13 @@
 use crate::database::Pool;
+use crate::env::get_maximum_pending_sentences;
 use crate::jwt::{extract_access_token_from_header, validate_token, TokenError, TokenType};
+use crate::models::sentence::Sentence;
+use crate::schema::sentences::columns::is_pending;
 use crate::schema::users;
 use bcrypt::{hash, verify, DEFAULT_COST};
 use diesel;
+use diesel::dsl::count;
+use diesel::expression::count::count_star;
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use diesel::result::{DatabaseErrorKind, Error};
@@ -11,7 +16,7 @@ use rocket::request::{FromRequest, Outcome, Request};
 use rocket::serde::Serialize;
 use rocket::State;
 
-#[derive(Queryable, Serialize, Identifiable, AsChangeset)]
+#[derive(Queryable, Serialize, Identifiable, AsChangeset, PartialEq)]
 pub struct User {
     pub id: i32,
     pub username: String,
@@ -131,12 +136,24 @@ impl User {
     }
 
     pub fn increment_token_generation(
-        mut self,
+        &mut self,
         database_connection: &PgConnection,
     ) -> Result<i32, Error> {
         self.token_generation += 1;
         self.save_changes::<User>(database_connection)?;
 
         Ok(self.token_generation)
+    }
+
+    pub fn pending_sentence_limit_reached(
+        &self,
+        database_connection: &PgConnection,
+    ) -> Result<bool, Error> {
+        let pending_sentences: i64 = Sentence::belonging_to(self)
+            .filter(is_pending.eq(true))
+            .select(count_star())
+            .first(database_connection)?;
+
+        Ok(pending_sentences >= get_maximum_pending_sentences() as i64)
     }
 }

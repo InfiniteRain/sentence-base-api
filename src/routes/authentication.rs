@@ -17,7 +17,7 @@ pub struct RegisterRequest {
     password: String,
 }
 
-#[post("/auth/register", format = "json", data = "<new_user>")]
+#[post("/auth/register", format = "json", data = "<register_request>")]
 pub fn register(
     register_request: Json<RegisterRequest>,
     database_connection: database::DbConnection,

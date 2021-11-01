@@ -20,10 +20,6 @@ impl<T: Serialize> SuccessResponse<T> {
             http_status: Status::Ok,
         }
     }
-
-    pub fn with_http_status(data: T, http_status: Status) -> SuccessResponse<T> {
-        SuccessResponse { data, http_status }
-    }
 }
 
 impl<'r, T: Serialize> Responder<'r, 'static> for SuccessResponse<T> {

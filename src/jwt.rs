@@ -1,3 +1,4 @@
+use crate::env::{get_access_token_expiry_time, get_refresh_token_expiry_time};
 use crate::models::user::User;
 use crate::responses::ErrorResponse;
 use diesel::PgConnection;
@@ -15,21 +16,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub fn get_jwt_secret_hmac() -> Hmac<Sha256> {
     let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET env variable should be set");
     Hmac::new_from_slice(jwt_secret.as_bytes()).expect("hmac should be created")
-}
-
-fn get_int_env_with_default(name: &str, default: u64) -> u64 {
-    match std::env::var(name) {
-        Ok(seconds) => seconds.parse::<u64>().unwrap_or(default),
-        Err(_) => default,
-    }
-}
-
-pub fn get_access_token_expiry_time() -> u64 {
-    get_int_env_with_default("JWT_ACCESS_TOKEN_EXPIRY_TIME", 3600)
-}
-
-pub fn get_refresh_token_expiry_time() -> u64 {
-    get_int_env_with_default("JWT_REFRESH_TOKEN_EXPIRY_TIME", 43800)
 }
 
 #[derive(Serialize, Deserialize, Eq, PartialEq)]

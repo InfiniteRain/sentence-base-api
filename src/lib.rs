@@ -7,12 +7,13 @@ use rocket::{Build, Rocket};
 
 mod analyzer;
 mod database;
+pub mod env;
 mod field_validator;
 pub mod jwt;
 pub mod models;
 mod responses;
 mod routes;
-mod schema;
+pub mod schema;
 
 pub fn rocket(database_url: &str) -> Rocket<Build> {
     dotenv::dotenv().ok();
@@ -26,7 +27,8 @@ pub fn rocket(database_url: &str) -> Rocket<Build> {
                 routes::authentication::register,
                 routes::authentication::login,
                 routes::authentication::refresh,
-                routes::authentication::me
+                routes::authentication::me,
+                routes::sentences::add,
             ],
         )
         .register("/", catchers![routes::catcher::default])

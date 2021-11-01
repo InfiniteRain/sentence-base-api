@@ -3,10 +3,8 @@ use common::*;
 use jwt::VerifyWithKey;
 use rocket::http::Status;
 use rocket::local::blocking::{Client, LocalResponse};
-use sentence_base::jwt::{
-    get_access_token_expiry_time, get_current_timestamp, get_jwt_secret_hmac,
-    get_refresh_token_expiry_time, TokenClaims, TokenType,
-};
+use sentence_base::env::{get_access_token_expiry_time, get_refresh_token_expiry_time};
+use sentence_base::jwt::{get_current_timestamp, get_jwt_secret_hmac, TokenClaims, TokenType};
 use sentence_base::models::user::User;
 use serde_json::json;
 
@@ -468,7 +466,7 @@ fn refresh_should_resolve_with_proper_token() {
 
 #[test]
 fn should_respect_token_generation() {
-    let (client, user, database_connection) =
+    let (client, mut user, database_connection) =
         create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
     let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
     let refresh_token = generate_jwt_token_for_user(&user, TokenType::Refresh);
