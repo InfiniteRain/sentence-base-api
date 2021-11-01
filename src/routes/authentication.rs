@@ -19,19 +19,19 @@ pub struct RegisterRequest {
 
 #[post("/auth/register", format = "json", data = "<new_user>")]
 pub fn register(
-    new_user: Json<RegisterRequest>,
+    register_request: Json<RegisterRequest>,
     database_connection: database::DbConnection,
 ) -> ResponseResult<User> {
-    let new_user = validate(new_user)?;
+    let register_data = validate(register_request)?;
 
-    let username = new_user.username.trim();
-    let email = new_user.email.trim();
+    let username = register_data.username.trim();
+    let email = register_data.email.trim();
 
     let registration_result = User::register(
         &database_connection,
         username.to_string(),
         email.to_string(),
-        new_user.password.to_string(),
+        register_data.password.to_string(),
     );
 
     match registration_result {
@@ -67,10 +67,10 @@ pub fn login(
     login_request: Json<LoginRequest>,
     database_connection: database::DbConnection,
 ) -> ResponseResult<LoginResponse> {
-    let authentication_data = validate(login_request)?;
+    let login_data = validate(login_request)?;
 
-    let email = authentication_data.email.trim().to_string();
-    let password = authentication_data.password;
+    let email = login_data.email.trim().to_string();
+    let password = login_data.password;
 
     let user =
         User::find_by_credentials(&database_connection, email, password).ok_or_else(|| {
