@@ -1,10 +1,12 @@
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use diesel::sql_query;
+use jwt::SignWithKey;
 use rocket::http::{ContentType, Header};
 use rocket::local::blocking::{Client, LocalResponse};
 use rocket::serde::json::Value;
 use sentence_base;
+use sentence_base::jwt::{get_current_timestamp, get_jwt_secret_hmac, TokenClaims, TokenType};
 use sentence_base::models::user::User;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -13,6 +15,10 @@ static DATABASE_COUNT: AtomicUsize = AtomicUsize::new(0);
 pub const DATABASE_TEST_PORT: i32 = 5430;
 pub const DATABASE_USERNAME: &'static str = "rocket";
 pub const DATABASE_PASSWORD: &'static str = "rocket";
+
+pub const TEST_USERNAME: &'static str = "test";
+pub const TEST_EMAIL: &'static str = "example@domain.com";
+pub const TEST_PASSWORD: &'static str = "password";
 
 pub fn prepare_new_database() -> String {
     let database_name = format!("test_db_{}", DATABASE_COUNT.fetch_add(1, Ordering::Relaxed));
@@ -94,6 +100,20 @@ pub fn send_post_request_with_json<'a>(
     client
         .post(url)
         .header(ContentType::JSON)
+        .body(json.to_string())
+        .dispatch()
+}
+
+pub fn send_post_request_with_json_and_auth<'a>(
+    client: &'a Client,
+    url: &'a str,
+    token: &'a str,
+    json: Value,
+) -> LocalResponse<'a> {
+    client
+        .post(url)
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", &token)))
         .body(json.to_string())
         .dispatch()
 }
@@ -202,4 +222,21 @@ pub fn assert_success(json: &Value) {
 
     assert_eq!(response_status, Some("success"));
     assert!(json.get("data").is_some());
+}
+
+pub fn generate_jwt_token_for_user(user: &User, token_type: TokenType) -> String {
+    let current_timestamp = get_current_timestamp();
+    generate_jwt_token(TokenClaims {
+        iat: current_timestamp,
+        exp: current_timestamp + 3600,
+        sub: user.id,
+        gen: 0,
+        typ: token_type,
+    })
+}
+
+pub fn generate_jwt_token(claims: TokenClaims) -> String {
+    claims
+        .sign_with_key(&get_jwt_secret_hmac())
+        .expect("token should be signed")
 }

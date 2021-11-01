@@ -1,6 +1,6 @@
 use bcrypt::verify;
 use common::*;
-use jwt::{SignWithKey, VerifyWithKey};
+use jwt::VerifyWithKey;
 use rocket::http::Status;
 use rocket::local::blocking::{Client, LocalResponse};
 use sentence_base::jwt::{
@@ -11,10 +11,6 @@ use sentence_base::models::user::User;
 use serde_json::json;
 
 mod common;
-
-const TEST_USERNAME: &'static str = "test";
-const TEST_EMAIL: &'static str = "example@domain.com";
-const TEST_PASSWORD: &'static str = "password";
 
 #[test]
 fn register_should_validate() {
@@ -528,23 +524,6 @@ fn assert_jwt_token(token: &str, token_type: TokenType) {
         current_time + expiry_time,
         claims.exp,
     );
-}
-
-fn generate_jwt_token_for_user(user: &User, token_type: TokenType) -> String {
-    let current_timestamp = get_current_timestamp();
-    generate_jwt_token(TokenClaims {
-        iat: current_timestamp,
-        exp: current_timestamp + 3600,
-        sub: user.id,
-        gen: 0,
-        typ: token_type,
-    })
-}
-
-fn generate_jwt_token(claims: TokenClaims) -> String {
-    claims
-        .sign_with_key(&get_jwt_secret_hmac())
-        .expect("token should be signed")
 }
 
 fn u64_diff(a: u64, b: u64) -> u64 {
