@@ -3,11 +3,13 @@ extern crate rocket;
 #[macro_use]
 extern crate diesel;
 
+use crate::frequency_list::JpFrequencyList;
 use rocket::{Build, Rocket};
 
 mod analyzer;
 mod database;
 mod field_validator;
+mod frequency_list;
 pub mod helpers;
 pub mod jwt;
 pub mod models;
@@ -18,8 +20,12 @@ pub mod schema;
 pub fn rocket(database_url: &str) -> Rocket<Build> {
     dotenv::dotenv().ok();
 
+    let database_pool = database::init_pool(database_url.to_string());
+    let frequency_list = JpFrequencyList::new();
+
     rocket::build()
-        .manage(database::init_pool(database_url.to_string()))
+        .manage(database_pool)
+        .manage(frequency_list)
         .mount(
             "/",
             routes![

@@ -2,7 +2,7 @@ use crate::models::user::User;
 use crate::models::word::Word;
 use crate::schema::sentences;
 use diesel::result::Error;
-use diesel::{associations, PgConnection, RunQueryDsl};
+use diesel::{PgConnection, RunQueryDsl};
 use rocket::serde::Serialize;
 
 #[derive(Queryable, Serialize, Identifiable, PartialEq, Associations)]

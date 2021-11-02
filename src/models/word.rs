@@ -1,4 +1,3 @@
-use crate::database::DbConnection;
 use crate::diesel::ExpressionMethods;
 use crate::diesel::QueryDsl;
 use crate::models::user::User;
@@ -8,7 +7,7 @@ use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::BelongingToDsl;
 use diesel::RunQueryDsl;
-use diesel::{associations, SaveChangesDsl};
+use diesel::SaveChangesDsl;
 use rocket::serde::Serialize;
 
 #[derive(Queryable, Serialize, Identifiable, PartialEq, Associations, Debug, AsChangeset)]

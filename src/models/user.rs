@@ -6,7 +6,6 @@ use crate::schema::sentences::columns::is_pending;
 use crate::schema::users;
 use bcrypt::{hash, verify, DEFAULT_COST};
 use diesel;
-use diesel::dsl::count;
 use diesel::expression::count::count_star;
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
