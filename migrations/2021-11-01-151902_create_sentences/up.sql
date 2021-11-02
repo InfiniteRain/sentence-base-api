@@ -6,6 +6,8 @@ CREATE TABLE sentences (
   sentence TEXT NOT NULL,
   is_pending BOOLEAN NOT NULL DEFAULT TRUE,
   is_mined BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT fk_sentences_user_id
     FOREIGN KEY (user_id)
     REFERENCES users(id),

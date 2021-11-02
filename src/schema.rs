@@ -6,6 +6,8 @@ table! {
         sentence -> Text,
         is_pending -> Bool,
         is_mined -> Bool,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
     }
 }
 
@@ -15,6 +17,8 @@ table! {
         username -> Text,
         email -> Text,
         hash -> Text,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
         token_generation -> Int4,
     }
 }
@@ -27,6 +31,8 @@ table! {
         reading -> Varchar,
         frequency -> Int4,
         is_mined -> Bool,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
     }
 }
 
