@@ -1,7 +1,7 @@
 use serde_json::Value;
 use std::collections::HashMap;
 
-const JP_FREQUENCY_LIST: &'static str = include_str!("../frequency_lists/jp.json");
+const JP_FREQUENCY_LIST: &str = include_str!("../frequency_lists/jp.json");
 
 pub struct JpFrequencyList {
     lowest_frequency: usize,
@@ -29,9 +29,15 @@ impl JpFrequencyList {
     }
 
     pub fn get_frequency(&self, word: String, reading: String) -> usize {
-        self.frequency_hash_map
+        *self
+            .frequency_hash_map
             .get(&(word, reading))
             .unwrap_or(&self.lowest_frequency)
-            .clone()
+    }
+}
+
+impl Default for JpFrequencyList {
+    fn default() -> Self {
+        Self::new()
     }
 }

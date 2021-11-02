@@ -33,8 +33,8 @@ impl Word {
     pub fn add_or_increase_frequency(
         database_connection: &PgConnection,
         user: &User,
-        dictionary_form: &String,
-        reading: &String,
+        dictionary_form: &str,
+        reading: &str,
     ) -> Result<Word, Error> {
         let potential_word: Result<Word, Error> = Word::belonging_to(user)
             .filter(dictionary_form_column.eq(dictionary_form))
@@ -49,8 +49,8 @@ impl Word {
             Err(_) => diesel::insert_into(words::table)
                 .values(NewWord {
                     user_id: user.id,
-                    dictionary_form: dictionary_form.clone(),
-                    reading: reading.clone(),
+                    dictionary_form: dictionary_form.to_string(),
+                    reading: reading.to_string(),
                 })
                 .get_result::<Word>(database_connection),
         }

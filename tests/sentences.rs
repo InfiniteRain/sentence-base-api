@@ -3,13 +3,14 @@ use diesel::QueryDsl;
 use diesel::RunQueryDsl;
 use diesel::{BelongingToDsl, ExpressionMethods};
 use rocket::http::Status;
+use rocket::serde::json::Value;
 use sentence_base::helpers::get_maximum_pending_sentences;
 use sentence_base::jwt::TokenType;
 use sentence_base::models::sentence::Sentence;
 use sentence_base::models::word::Word;
 use sentence_base::schema::sentences::columns::is_pending;
 use sentence_base::schema::sentences::dsl::sentences;
-use serde_json::json;
+use serde_json::{json, Map};
 
 mod common;
 
@@ -157,7 +158,7 @@ fn add_should_increase_frequency_on_duplicate() {
 
 #[test]
 fn add_should_not_add_more_sentences_over_the_limit() {
-    let (client, user, database_connection) =
+    let (client, user, _) =
         create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
     let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
 
@@ -230,6 +231,118 @@ fn add_should_not_count_non_pending_sentences_towards_the_limit() {
         .expect("should resolve whether pending sentence limit was reached");
 
     assert!(!is_sentences_pending_limit_reached_after_update)
+}
+
+#[test]
+fn get_should_require_auth() {
+    let (client, _) = create_client();
+
+    let response = send_get_request(&client, "/sentences");
+    assert_eq!(response.status(), Status::Unauthorized);
+    let json = response_to_json(response);
+    assert_fail(&json, "No Token Provided");
+}
+
+#[test]
+fn get_should_return_empty_sentences_when_none_are_pending() {
+    let (client, user, _) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+    let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
+
+    let response = send_get_request_with_auth(&client, "/sentences", &access_token);
+    assert_eq!(response.status(), Status::Ok);
+    let json = response_to_json(response);
+    assert_success(&json);
+
+    let data = json.get("data").unwrap().as_object().unwrap();
+
+    assert_word_order(data, vec![]);
+}
+
+#[test]
+fn get_should_return_pending_sentences_in_the_correct_order() {
+    let words: [(&'static str, &'static str); 10] = [
+        ("ペン", "ペン"),
+        ("魑魅魍魎", "チミモウリョウ"),
+        ("勝ち星", "カチボシ"),
+        ("魑魅魍魎", "チミモウリョウ"),
+        ("猫", "ネコ"),
+        ("犬", "イヌ"),
+        ("魑魅魍魎", "チミモウリョウ"),
+        ("学校", "ガッコウ"),
+        ("家", "イエ"),
+        ("勝ち星", "カチボシ"),
+    ];
+    let (client, user, _) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+    let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
+
+    for (dictionary_form, reading) in words {
+        let response = send_post_request_with_json_and_auth(
+            &client,
+            "/sentences",
+            &access_token,
+            json!({
+                "dictionary_form": dictionary_form,
+                "reading": reading,
+                "sentence": format!("a sentence with {}", dictionary_form),
+            }),
+        );
+        assert_eq!(response.status(), Status::Ok);
+    }
+
+    let response = send_get_request_with_auth(&client, "/sentences", &access_token);
+    assert_eq!(response.status(), Status::Ok);
+    let json = response_to_json(response);
+    assert_success(&json);
+
+    let data = json.get("data").unwrap().as_object().unwrap();
+
+    assert_word_order(
+        &data,
+        vec![
+            ("魑魅魍魎", "チミモウリョウ"),
+            ("魑魅魍魎", "チミモウリョウ"),
+            ("魑魅魍魎", "チミモウリョウ"),
+            ("勝ち星", "カチボシ"),
+            ("勝ち星", "カチボシ"),
+            ("家", "イエ"),
+            ("学校", "ガッコウ"),
+            ("犬", "イヌ"),
+            ("猫", "ネコ"),
+            ("ペン", "ペン"),
+        ],
+    );
+}
+
+fn assert_word_order(data: &Map<String, Value>, order: Vec<(&str, &str)>) {
+    let response_sentences = data
+        .get("sentences")
+        .expect("should include 'sentences' field")
+        .as_array()
+        .expect("'sentences' should be an array");
+
+    assert_eq!(order.len(), response_sentences.len());
+
+    for (index, sentence) in response_sentences.iter().enumerate() {
+        let word_object = sentence.as_object().expect("words should be objects");
+
+        let response_dictionary_form = word_object
+            .get("dictionary_form")
+            .expect("should include 'dictionary_form' field")
+            .as_str()
+            .expect("'dictionary_field' should be a string");
+
+        assert_eq!(response_dictionary_form, order[index].0);
+
+        let response_reading = word_object
+            .get("reading")
+            .expect("should include 'reading' field")
+            .as_str()
+            .expect("'reading' should be a string");
+
+        assert_eq!(response_reading, order[index].1);
+    }
 }
 
 // todo: mined -> unmined if the same word got mined

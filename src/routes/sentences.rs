@@ -1,13 +1,15 @@
 use crate::database::DbConnection;
 use crate::field_validator::validate;
+use crate::frequency_list::JpFrequencyList;
 use crate::models::sentence::Sentence;
-use crate::models::user::User;
+use crate::models::user::{User, UserSentenceEntry};
 use crate::models::word::Word;
 use crate::responses::{ErrorResponse, ResponseResult, SuccessResponse};
 use diesel::result::Error;
 use rocket::http::Status;
 use rocket::serde::json::Json;
-use rocket::serde::Deserialize;
+use rocket::serde::{Deserialize, Serialize};
+use rocket::State;
 use validator::Validate;
 
 #[derive(Validate, Deserialize)]
@@ -25,7 +27,7 @@ pub fn add(
     sentence_request: Json<AddSentenceRequest>,
     database_connection: DbConnection,
     user: User,
-) -> ResponseResult<()> {
+) -> ResponseResult {
     let sentence_data = validate(sentence_request)?;
 
     let dictionary_form = sentence_data.dictionary_form.trim().to_string();
@@ -52,4 +54,26 @@ pub fn add(
     Sentence::add(&database_connection, &user, &word_entry, &sentence).map_err(error_map_fn)?;
 
     Ok(SuccessResponse::new(()))
+}
+
+#[derive(Serialize)]
+pub struct GetSentenceResponse {
+    sentences: Vec<UserSentenceEntry>,
+}
+
+#[get("/sentences")]
+pub fn get(
+    database_connection: DbConnection,
+    user: User,
+    frequency_list: &State<JpFrequencyList>,
+) -> ResponseResult<GetSentenceResponse> {
+    let pending_sentences = user
+        .get_pending_sentences(&database_connection, frequency_list)
+        .map_err(|_| {
+            ErrorResponse::error("Unexpected Error".to_string(), Status::InternalServerError)
+        })?;
+
+    Ok(SuccessResponse::new(GetSentenceResponse {
+        sentences: pending_sentences,
+    }))
 }

@@ -30,13 +30,13 @@ impl Sentence {
         database_connection: &PgConnection,
         user: &User,
         word: &Word,
-        sentence: &String,
+        sentence: &str,
     ) -> Result<Sentence, Error> {
         diesel::insert_into(sentences::table)
             .values(NewSentence {
                 user_id: user.id,
                 word_id: word.id,
-                sentence: sentence.clone(),
+                sentence: sentence.to_string(),
             })
             .get_result::<Sentence>(database_connection)
     }

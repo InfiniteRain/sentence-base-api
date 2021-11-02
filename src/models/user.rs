@@ -1,19 +1,24 @@
 use crate::database::Pool;
+use crate::frequency_list::JpFrequencyList;
 use crate::helpers::get_maximum_pending_sentences;
 use crate::jwt::{extract_access_token_from_header, validate_token, TokenError, TokenType};
 use crate::models::sentence::Sentence;
+use crate::models::word::Word;
 use crate::schema::sentences::columns::is_pending;
 use crate::schema::users;
+use crate::schema::words::dsl::words;
 use bcrypt::{hash, verify, DEFAULT_COST};
 use diesel;
 use diesel::expression::count::count_star;
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use diesel::result::{DatabaseErrorKind, Error};
+use itertools::Itertools;
 use rocket::outcome::try_outcome;
 use rocket::request::{FromRequest, Outcome, Request};
 use rocket::serde::Serialize;
 use rocket::State;
+use std::collections::HashMap;
 
 #[derive(Queryable, Serialize, Identifiable, AsChangeset, PartialEq)]
 pub struct User {
@@ -39,6 +44,16 @@ pub enum UserRegistrationError {
     DuplicateEmail,
     DuplicateUsername,
     FailedToHash,
+}
+
+#[derive(Serialize)]
+pub struct UserSentenceEntry {
+    sentence_id: i32,
+    sentence: String,
+    dictionary_form: String,
+    reading: String,
+    mining_frequency: i32,
+    dictionary_frequency: usize,
 }
 
 impl From<Error> for UserRegistrationError {
@@ -144,6 +159,7 @@ impl User {
         Ok(self.token_generation)
     }
 
+    // todo add "is_"
     pub fn pending_sentence_limit_reached(
         &self,
         database_connection: &PgConnection,
@@ -154,5 +170,50 @@ impl User {
             .first(database_connection)?;
 
         Ok(pending_sentences >= get_maximum_pending_sentences() as i64)
+    }
+
+    pub fn get_pending_sentences(
+        &self,
+        database_connection: &PgConnection,
+        frequency_list: &JpFrequencyList,
+    ) -> Result<Vec<UserSentenceEntry>, Error> {
+        let rows: Vec<(Sentence, Word)> = Sentence::belonging_to(self)
+            .filter(is_pending.eq(true))
+            .inner_join(words)
+            .load(database_connection)?;
+
+        let mut frequency_groups: HashMap<i32, Vec<UserSentenceEntry>> = HashMap::new();
+
+        for (sentence, word) in rows {
+            frequency_groups
+                .entry(word.frequency)
+                .or_default()
+                .push(UserSentenceEntry {
+                    sentence_id: sentence.id,
+                    sentence: sentence.sentence,
+                    dictionary_form: word.dictionary_form.clone(),
+                    reading: word.reading.clone(),
+                    mining_frequency: word.frequency,
+                    dictionary_frequency: frequency_list
+                        .get_frequency(word.dictionary_form, word.reading),
+                })
+        }
+
+        Ok(frequency_groups
+            .into_values()
+            .map(|user_sentence_entries| {
+                user_sentence_entries
+                    .into_iter()
+                    .sorted_by(|lhs, rhs| lhs.dictionary_frequency.cmp(&rhs.dictionary_frequency))
+                    .collect::<Vec<UserSentenceEntry>>()
+            })
+            .sorted_by(|lhs, rhs| {
+                lhs[0]
+                    .mining_frequency
+                    .cmp(&rhs[0].mining_frequency)
+                    .reverse()
+            })
+            .flatten()
+            .collect::<Vec<UserSentenceEntry>>())
     }
 }
