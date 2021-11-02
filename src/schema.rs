@@ -23,7 +23,8 @@ table! {
     words (id) {
         id -> Int4,
         user_id -> Int4,
-        word -> Varchar,
+        dictionary_form -> Varchar,
+        reading -> Varchar,
         frequency -> Int4,
         is_mined -> Bool,
     }

@@ -13,7 +13,9 @@ use validator::Validate;
 #[derive(Validate, Deserialize)]
 pub struct AddSentenceRequest {
     #[validate(length(min = 1))]
-    word: String,
+    dictionary_form: String,
+    #[validate(length(min = 1))]
+    reading: String,
     #[validate(length(min = 1))]
     sentence: String,
 }
@@ -26,7 +28,8 @@ pub fn add(
 ) -> ResponseResult<()> {
     let sentence_data = validate(sentence_request)?;
 
-    let word = sentence_data.word.trim().to_string();
+    let dictionary_form = sentence_data.dictionary_form.trim().to_string();
+    let reading = sentence_data.reading.trim().to_string();
     let sentence = sentence_data.sentence.trim().to_string();
 
     let error_map_fn = |_error: Error| {
@@ -43,8 +46,9 @@ pub fn add(
         ));
     }
 
-    let word_entry = Word::add_or_increase_frequency(&database_connection, &user, &word)
-        .map_err(error_map_fn)?;
+    let word_entry =
+        Word::add_or_increase_frequency(&database_connection, &user, &dictionary_form, &reading)
+            .map_err(error_map_fn)?;
     Sentence::add(&database_connection, &user, &word_entry, &sentence).map_err(error_map_fn)?;
 
     Ok(SuccessResponse::new(()))

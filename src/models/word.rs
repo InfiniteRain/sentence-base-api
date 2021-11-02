@@ -2,7 +2,7 @@ use crate::diesel::ExpressionMethods;
 use crate::diesel::QueryDsl;
 use crate::models::user::User;
 use crate::schema::words;
-use crate::schema::words::word as word_column;
+use crate::schema::words::{dictionary_form as dictionary_form_column, reading as reading_column};
 use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::BelongingToDsl;
@@ -15,7 +15,8 @@ use rocket::serde::Serialize;
 pub struct Word {
     pub id: i32,
     pub user_id: i32,
-    pub word: String,
+    pub dictionary_form: String,
+    pub reading: String,
     pub frequency: i32,
     pub is_mined: bool,
 }
@@ -24,17 +25,20 @@ pub struct Word {
 #[table_name = "words"]
 pub struct NewWord {
     pub user_id: i32,
-    pub word: String,
+    pub dictionary_form: String,
+    pub reading: String,
 }
 
 impl Word {
     pub fn add_or_increase_frequency(
         database_connection: &PgConnection,
         user: &User,
-        word: &String,
+        dictionary_form: &String,
+        reading: &String,
     ) -> Result<Word, Error> {
         let potential_word: Result<Word, Error> = Word::belonging_to(user)
-            .filter(word_column.eq(word))
+            .filter(dictionary_form_column.eq(dictionary_form))
+            .filter(reading_column.eq(reading))
             .first(database_connection);
 
         match potential_word {
@@ -45,7 +49,8 @@ impl Word {
             Err(_) => diesel::insert_into(words::table)
                 .values(NewWord {
                     user_id: user.id,
-                    word: word.clone(),
+                    dictionary_form: dictionary_form.clone(),
+                    reading: reading.clone(),
                 })
                 .get_result::<Word>(database_connection),
         }
