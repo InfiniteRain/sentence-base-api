@@ -1,3 +1,4 @@
+use crate::models::mining_batch::MiningBatch;
 use crate::models::user::User;
 use crate::models::word::Word;
 use crate::schema::sentences;
@@ -9,6 +10,7 @@ use rocket::serde::Serialize;
 #[derive(Queryable, Serialize, Identifiable, PartialEq, Associations)]
 #[belongs_to(User)]
 #[belongs_to(Word)]
+#[belongs_to(MiningBatch)]
 pub struct Sentence {
     pub id: i32,
     pub user_id: i32,
@@ -29,12 +31,12 @@ pub struct NewSentence {
 }
 
 impl Sentence {
-    pub fn add(
+    pub fn new(
         database_connection: &PgConnection,
         user: &User,
         word: &Word,
         sentence: &str,
-    ) -> Result<Sentence, Error> {
+    ) -> Result<Self, Error> {
         diesel::insert_into(sentences::table)
             .values(NewSentence {
                 user_id: user.id,

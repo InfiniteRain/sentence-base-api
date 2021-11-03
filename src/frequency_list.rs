@@ -28,10 +28,10 @@ impl JpFrequencyList {
         }
     }
 
-    pub fn get_frequency(&self, word: String, reading: String) -> usize {
+    pub fn get_frequency(&self, word: &str, reading: &str) -> usize {
         *self
             .frequency_hash_map
-            .get(&(word, reading))
+            .get(&(word.to_string(), reading.to_string()))
             .unwrap_or(&self.lowest_frequency)
     }
 }

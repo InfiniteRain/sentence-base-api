@@ -2,7 +2,9 @@ use crate::diesel::ExpressionMethods;
 use crate::diesel::QueryDsl;
 use crate::models::user::User;
 use crate::schema::words;
-use crate::schema::words::{dictionary_form as dictionary_form_column, reading as reading_column};
+use crate::schema::words::{
+    dictionary_form as schema_words_dictionary_form, reading as schema_words_reading,
+};
 use chrono::NaiveDateTime;
 use diesel::pg::PgConnection;
 use diesel::result::Error;
@@ -33,15 +35,15 @@ pub struct NewWord {
 }
 
 impl Word {
-    pub fn add_or_increase_frequency(
+    pub fn new_or_increase_frequency(
         database_connection: &PgConnection,
         user: &User,
         dictionary_form: &str,
         reading: &str,
     ) -> Result<Word, Error> {
         let potential_word: Result<Word, Error> = Word::belonging_to(user)
-            .filter(dictionary_form_column.eq(dictionary_form))
-            .filter(reading_column.eq(reading))
+            .filter(schema_words_dictionary_form.eq(dictionary_form))
+            .filter(schema_words_reading.eq(reading))
             .first(database_connection);
 
         match potential_word {

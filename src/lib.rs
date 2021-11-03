@@ -13,8 +13,8 @@ mod frequency_list;
 pub mod helpers;
 pub mod jwt;
 pub mod models;
-mod responses;
-mod routes;
+pub mod responses;
+pub mod routes;
 pub mod schema;
 
 pub fn rocket(database_url: &str) -> Rocket<Build> {
@@ -36,6 +36,7 @@ pub fn rocket(database_url: &str) -> Rocket<Build> {
                 routes::authentication::me,
                 routes::sentences::add,
                 routes::sentences::get,
+                routes::sentences::new_batch,
             ],
         )
         .register("/", catchers![routes::catcher::default])

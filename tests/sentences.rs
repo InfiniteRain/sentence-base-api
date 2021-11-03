@@ -3,17 +3,36 @@ use diesel::QueryDsl;
 use diesel::RunQueryDsl;
 use diesel::{BelongingToDsl, ExpressionMethods};
 use rocket::http::Status;
+use rocket::local::blocking::Client;
 use rocket::serde::json::Value;
 use sentence_base::helpers::get_maximum_pending_sentences;
 use sentence_base::jwt::TokenType;
 use sentence_base::models::sentence::Sentence;
+use sentence_base::models::user::User;
 use sentence_base::models::word::Word;
-use sentence_base::schema::sentences::columns::id as schema_sentences_id;
-use sentence_base::schema::sentences::columns::is_pending;
-use sentence_base::schema::sentences::dsl::sentences;
+use sentence_base::responses::SuccessResponse;
+use sentence_base::routes::sentences::{AddSentenceResponse, BatchResponse};
+use sentence_base::schema::sentences as schema_sentences;
+use sentence_base::schema::sentences::dsl::sentences as dsl_sentences;
+use sentence_base::schema::sentences::{
+    id as schema_sentences_id, is_pending, mining_batch_id as schema_sentences_mining_batch_id,
+};
 use serde_json::{json, Map};
 
 mod common;
+
+const TEST_WORDS: [(&'static str, &'static str); 10] = [
+    ("ペン", "ペン"),
+    ("魑魅魍魎", "チミモウリョウ"),
+    ("勝ち星", "カチボシ"),
+    ("魑魅魍魎", "チミモウリョウ"),
+    ("猫", "ネコ"),
+    ("犬", "イヌ"),
+    ("魑魅魍魎", "チミモウリョウ"),
+    ("学校", "ガッコウ"),
+    ("家", "イエ"),
+    ("勝ち星", "カチボシ"),
+];
 
 #[test]
 fn add_should_require_auth() {
@@ -106,6 +125,18 @@ fn add_should_result_with_a_word_and_a_sentence_added() {
 
     let json = response_to_json(response);
     assert_success(&json);
+    let deserialized_response: SuccessResponse<AddSentenceResponse> =
+        serde_json::from_value(json).expect("should deserialize response");
+    let deserialized_data = deserialized_response.get_data();
+
+    assert_eq!(deserialized_data.sentence.sentence_id, sentence.id);
+    assert_eq!(deserialized_data.sentence.sentence, sentence.sentence);
+    assert_eq!(
+        deserialized_data.sentence.dictionary_form,
+        word.dictionary_form
+    );
+    assert_eq!(deserialized_data.sentence.reading, word.reading);
+    assert_eq!(deserialized_data.sentence.mining_frequency, word.frequency);
 }
 
 #[test]
@@ -217,18 +248,18 @@ fn add_should_not_count_non_pending_sentences_towards_the_limit() {
     }
 
     let is_sentences_pending_limit_reached = user
-        .pending_sentence_limit_reached(&database_connection)
+        .is_pending_sentence_limit_reached(&database_connection)
         .expect("should resolve whether pending sentence limit was reached");
 
     assert!(is_sentences_pending_limit_reached);
 
-    diesel::update(sentences.filter(is_pending.eq(true)))
+    diesel::update(dsl_sentences.filter(is_pending.eq(true)))
         .set(is_pending.eq(false))
         .execute(&database_connection)
         .expect("query should execute");
 
     let is_sentences_pending_limit_reached_after_update = user
-        .pending_sentence_limit_reached(&database_connection)
+        .is_pending_sentence_limit_reached(&database_connection)
         .expect("should resolve whether pending sentence limit was reached");
 
     assert!(!is_sentences_pending_limit_reached_after_update)
@@ -262,7 +293,7 @@ fn get_should_return_empty_sentences_when_none_are_pending() {
     );
     assert_eq!(add_response.status(), Status::Ok);
 
-    diesel::update(sentences.filter(schema_sentences_id.eq(1)))
+    diesel::update(dsl_sentences.filter(schema_sentences_id.eq(1)))
         .set(is_pending.eq(false))
         .execute(&database_connection)
         .unwrap();
@@ -279,35 +310,11 @@ fn get_should_return_empty_sentences_when_none_are_pending() {
 
 #[test]
 fn get_should_return_pending_sentences_in_the_correct_order() {
-    let words: [(&'static str, &'static str); 10] = [
-        ("ペン", "ペン"),
-        ("魑魅魍魎", "チミモウリョウ"),
-        ("勝ち星", "カチボシ"),
-        ("魑魅魍魎", "チミモウリョウ"),
-        ("猫", "ネコ"),
-        ("犬", "イヌ"),
-        ("魑魅魍魎", "チミモウリョウ"),
-        ("学校", "ガッコウ"),
-        ("家", "イエ"),
-        ("勝ち星", "カチボシ"),
-    ];
     let (client, user, _) =
         create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
     let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
 
-    for (dictionary_form, reading) in words {
-        let response = send_post_request_with_json_and_auth(
-            &client,
-            "/sentences",
-            &access_token,
-            json!({
-                "dictionary_form": dictionary_form,
-                "reading": reading,
-                "sentence": format!("a sentence with {}", dictionary_form),
-            }),
-        );
-        assert_eq!(response.status(), Status::Ok);
-    }
+    commit_test_words(&client, &access_token);
 
     let response = send_get_request_with_auth(&client, "/sentences", &access_token);
     assert_eq!(response.status(), Status::Ok);
@@ -363,4 +370,152 @@ fn assert_word_order(data: &Map<String, Value>, order: Vec<(&str, &str)>) {
     }
 }
 
+#[test]
+fn new_batch_should_require_auth() {
+    let (client, _) = create_client();
+
+    let response = send_post_request_with_json(
+        &client,
+        "/sentences/batches",
+        json!({
+            "sentences": [1, 2, 3]
+        }),
+    );
+    assert_eq!(response.status(), Status::Unauthorized);
+    let json = response_to_json(response);
+    assert_fail(&json, "No Token Provided");
+}
+
+#[test]
+fn new_batch_should_validate() {
+    let (client, user, _) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+    let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
+
+    let response = send_post_request_with_json_and_auth(
+        &client,
+        "/sentences/batches",
+        &access_token,
+        json!({
+            "sentences": []
+        }),
+    );
+    assert_eq!(response.status(), Status::UnprocessableEntity);
+    let json = response_to_json(response);
+    assert_fail(&json, "Validation Error");
+    assert_fail_reasons_validation_fields(&json, vec!["sentences".to_string()]);
+}
+
+#[test]
+fn new_batch_should_not_work_for_non_existent_sentences() {
+    let (client, user, _) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+    let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
+
+    let response = send_post_request_with_json_and_auth(
+        &client,
+        "/sentences/batches",
+        &access_token,
+        json!({
+            "sentences": [1]
+        }),
+    );
+    assert_eq!(response.status(), Status::UnprocessableEntity);
+    let json = response_to_json(response);
+    assert_fail(&json, "Invalid Sentences Provided");
+}
+
+#[test]
+fn new_batch_should_not_work_for_non_owned_sentences() {
+    let (client, user, database_connection) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+    let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
+
+    let new_user = User::register(
+        &database_connection,
+        "user2".to_string(),
+        "user2@domain.com".to_string(),
+        "password".to_string(),
+    )
+    .expect("should register user");
+
+    let new_word = Word::new_or_increase_frequency(&database_connection, &new_user, "cat", "CAT")
+        .expect("should add the word");
+    let new_sentence = Sentence::new(
+        &database_connection,
+        &new_user,
+        &new_word,
+        "the cat is sleeping",
+    )
+    .expect("should add the sentence");
+
+    let response = send_post_request_with_json_and_auth(
+        &client,
+        "/sentences/batches",
+        &access_token,
+        json!({
+            "sentences": [new_sentence.id]
+        }),
+    );
+    assert_eq!(response.status(), Status::UnprocessableEntity);
+    let json = response_to_json(response);
+    assert_fail(&json, "Invalid Sentences Provided");
+}
+
+#[test]
+fn new_batch_should_work() {
+    let (client, user, database_connection) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+    let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
+    let sentence_ids = commit_test_words(&client, &access_token);
+
+    let response = send_post_request_with_json_and_auth(
+        &client,
+        "/sentences/batches",
+        &access_token,
+        json!({ "sentences": sentence_ids }),
+    );
+    assert_eq!(response.status(), Status::Ok);
+    let json = response_to_json(response);
+    assert_success(&json);
+    let deserialized_response: SuccessResponse<BatchResponse> =
+        serde_json::from_value(json).expect("should deserialize response");
+
+    let sentence_batch: Vec<Sentence> = schema_sentences::table
+        .filter(schema_sentences_mining_batch_id.eq(deserialized_response.get_data().batch_id))
+        .get_results(&database_connection)
+        .expect("should execute find sentence batch query");
+
+    assert_eq!(sentence_batch.len(), TEST_WORDS.len())
+
+    // todo: check here if the sentences have all the correct data (is_pending = true & correct mining_batch_id)
+}
+
+fn commit_test_words(client: &Client, access_token: &String) -> Vec<i32> {
+    let mut sentence_ids: Vec<i32> = vec![];
+
+    for (dictionary_form, reading) in TEST_WORDS {
+        let response = send_post_request_with_json_and_auth(
+            &client,
+            "/sentences",
+            &access_token,
+            json!({
+                "dictionary_form": dictionary_form,
+                "reading": reading,
+                "sentence": format!("a sentence with {}", dictionary_form),
+            }),
+        );
+        assert_eq!(response.status(), Status::Ok);
+        let json = response_to_json(response);
+        let deserialized_response: SuccessResponse<AddSentenceResponse> =
+            serde_json::from_value(json).expect("should deserialize response");
+
+        sentence_ids.push(deserialized_response.get_data().sentence.sentence_id);
+    }
+
+    sentence_ids
+}
+
+// todo: cannot submit same batch twice
 // todo: mined -> unmined if the same word got mined
+// todo: commit with duplicate id's

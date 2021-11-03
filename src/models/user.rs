@@ -2,14 +2,20 @@ use crate::database::Pool;
 use crate::frequency_list::JpFrequencyList;
 use crate::helpers::get_maximum_pending_sentences;
 use crate::jwt::{extract_access_token_from_header, validate_token, TokenError, TokenType};
+use crate::models::mining_batch::MiningBatch;
 use crate::models::sentence::Sentence;
 use crate::models::word::Word;
-use crate::schema::sentences::columns::is_pending;
+use crate::schema::sentences::dsl::sentences as dsl_sentences;
+use crate::schema::sentences::{
+    id as schema_sentences_id, is_pending as schema_sentences_is_pending,
+    mining_batch_id as schema_sentences_mining_batch_id,
+};
 use crate::schema::users;
-use crate::schema::words::dsl::words;
+use crate::schema::words::dsl::words as dsl_words;
 use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::NaiveDateTime;
 use diesel;
+use diesel::dsl::any;
 use diesel::expression::count::count_star;
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
@@ -17,7 +23,7 @@ use diesel::result::{DatabaseErrorKind, Error};
 use itertools::Itertools;
 use rocket::outcome::try_outcome;
 use rocket::request::{FromRequest, Outcome, Request};
-use rocket::serde::Serialize;
+use rocket::serde::{Deserialize, Serialize};
 use rocket::State;
 use std::collections::HashMap;
 
@@ -34,14 +40,6 @@ pub struct User {
     pub token_generation: i32,
 }
 
-/*        id -> Int4,
-username -> Text,
-email -> Text,
-hash -> Text,
-created_at -> Timestamptz,
-updated_at -> Timestamptz,
-token_generation -> Int4,*/
-
 #[derive(Insertable)]
 #[table_name = "users"]
 pub struct NewUser {
@@ -50,21 +48,35 @@ pub struct NewUser {
     pub hash: String,
 }
 
+#[derive(Deserialize, Serialize)]
+pub struct UserSentenceEntry {
+    pub sentence_id: i32,
+    pub sentence: String,
+    pub dictionary_form: String,
+    pub reading: String,
+    pub mining_frequency: i32,
+    pub dictionary_frequency: usize,
+}
+
+impl UserSentenceEntry {
+    pub fn new(word: &Word, sentence: &Sentence, frequency_list: &JpFrequencyList) -> Self {
+        UserSentenceEntry {
+            sentence_id: sentence.id,
+            sentence: sentence.sentence.clone(),
+            dictionary_form: word.dictionary_form.clone(),
+            reading: word.reading.clone(),
+            mining_frequency: word.frequency,
+            dictionary_frequency: frequency_list
+                .get_frequency(&word.dictionary_form, &word.reading),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum UserRegistrationError {
     DuplicateEmail,
     DuplicateUsername,
     FailedToHash,
-}
-
-#[derive(Serialize)]
-pub struct UserSentenceEntry {
-    sentence_id: i32,
-    sentence: String,
-    dictionary_form: String,
-    reading: String,
-    mining_frequency: i32,
-    dictionary_frequency: usize,
 }
 
 impl From<Error> for UserRegistrationError {
@@ -79,6 +91,11 @@ impl From<Error> for UserRegistrationError {
 
         panic!("Error registering a user: {:?}", err)
     }
+}
+
+pub enum CommitSentencesError {
+    DatabaseError(Error),
+    InvalidSentencesProvided,
 }
 
 #[rocket::async_trait]
@@ -170,13 +187,12 @@ impl User {
         Ok(self.token_generation)
     }
 
-    // todo add "is_"
-    pub fn pending_sentence_limit_reached(
+    pub fn is_pending_sentence_limit_reached(
         &self,
         database_connection: &PgConnection,
     ) -> Result<bool, Error> {
         let pending_sentences: i64 = Sentence::belonging_to(self)
-            .filter(is_pending.eq(true))
+            .filter(schema_sentences_is_pending.eq(true))
             .select(count_star())
             .first(database_connection)?;
 
@@ -189,8 +205,8 @@ impl User {
         frequency_list: &JpFrequencyList,
     ) -> Result<Vec<UserSentenceEntry>, Error> {
         let rows: Vec<(Sentence, Word)> = Sentence::belonging_to(self)
-            .filter(is_pending.eq(true))
-            .inner_join(words)
+            .filter(schema_sentences_is_pending.eq(true))
+            .inner_join(dsl_words)
             .load(database_connection)?;
 
         let mut frequency_groups: HashMap<i32, Vec<UserSentenceEntry>> = HashMap::new();
@@ -199,15 +215,7 @@ impl User {
             frequency_groups
                 .entry(word.frequency)
                 .or_default()
-                .push(UserSentenceEntry {
-                    sentence_id: sentence.id,
-                    sentence: sentence.sentence,
-                    dictionary_form: word.dictionary_form.clone(),
-                    reading: word.reading.clone(),
-                    mining_frequency: word.frequency,
-                    dictionary_frequency: frequency_list
-                        .get_frequency(word.dictionary_form, word.reading),
-                })
+                .push(UserSentenceEntry::new(&word, &sentence, frequency_list));
         }
 
         Ok(frequency_groups
@@ -226,5 +234,53 @@ impl User {
             })
             .flatten()
             .collect::<Vec<UserSentenceEntry>>())
+    }
+
+    pub fn commit_batch(
+        &self,
+        database_connection: &PgConnection,
+        sentence_ids: &[i32],
+    ) -> Result<MiningBatch, CommitSentencesError> {
+        let rows: Vec<(Sentence, Word)> = Sentence::belonging_to(self)
+            .filter(schema_sentences_is_pending.eq(true))
+            .filter(schema_sentences_id.eq(any(sentence_ids)))
+            .inner_join(dsl_words)
+            .load(database_connection)
+            .map_err(CommitSentencesError::DatabaseError)?;
+
+        if rows.len() != sentence_ids.len() {
+            return Err(CommitSentencesError::InvalidSentencesProvided);
+        }
+
+        let mining_batch = MiningBatch::new(database_connection, self)
+            .map_err(CommitSentencesError::DatabaseError)?;
+
+        diesel::update(dsl_sentences.filter(schema_sentences_id.eq(any(sentence_ids))))
+            .set((
+                schema_sentences_is_pending.eq(false),
+                schema_sentences_mining_batch_id.eq(mining_batch.id),
+            ))
+            .execute(database_connection)
+            .map_err(CommitSentencesError::DatabaseError)?;
+
+        Ok(mining_batch)
+    }
+
+    pub fn get_sentence_batch(
+        &self,
+        database_connection: &PgConnection,
+        batch: &MiningBatch,
+        frequency_list: &JpFrequencyList,
+    ) -> Result<Vec<UserSentenceEntry>, Error> {
+        let rows: Vec<(Sentence, Word)> = Sentence::belonging_to(batch)
+            .inner_join(dsl_words)
+            .load(database_connection)?;
+
+        let sentences = rows
+            .into_iter()
+            .map(|(sentence, word)| UserSentenceEntry::new(&word, &sentence, frequency_list))
+            .collect();
+
+        Ok(sentences)
     }
 }
