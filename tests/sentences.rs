@@ -8,6 +8,7 @@ use sentence_base::helpers::get_maximum_pending_sentences;
 use sentence_base::jwt::TokenType;
 use sentence_base::models::sentence::Sentence;
 use sentence_base::models::word::Word;
+use sentence_base::schema::sentences::columns::id as schema_sentences_id;
 use sentence_base::schema::sentences::columns::is_pending;
 use sentence_base::schema::sentences::dsl::sentences;
 use serde_json::{json, Map};
@@ -245,9 +246,26 @@ fn get_should_require_auth() {
 
 #[test]
 fn get_should_return_empty_sentences_when_none_are_pending() {
-    let (client, user, _) =
+    let (client, user, database_connection) =
         create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
     let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
+
+    let add_response = send_post_request_with_json_and_auth(
+        &client,
+        "/sentences",
+        &access_token,
+        json!({
+            "dictionary_form": "cat",
+            "reading": "CAT",
+            "sentence": "the cat is sleeping.",
+        }),
+    );
+    assert_eq!(add_response.status(), Status::Ok);
+
+    diesel::update(sentences.filter(schema_sentences_id.eq(1)))
+        .set(is_pending.eq(false))
+        .execute(&database_connection)
+        .unwrap();
 
     let response = send_get_request_with_auth(&client, "/sentences", &access_token);
     assert_eq!(response.status(), Status::Ok);
