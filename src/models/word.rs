@@ -3,6 +3,7 @@ use crate::diesel::QueryDsl;
 use crate::models::user::User;
 use crate::schema::words;
 use crate::schema::words::{dictionary_form as dictionary_form_column, reading as reading_column};
+use chrono::NaiveDateTime;
 use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::BelongingToDsl;
@@ -19,6 +20,8 @@ pub struct Word {
     pub reading: String,
     pub frequency: i32,
     pub is_mined: bool,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Insertable)]

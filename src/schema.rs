@@ -1,13 +1,22 @@
 table! {
+    mining_batches (id) {
+        id -> Int4,
+        user_id -> Int4,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+table! {
     sentences (id) {
         id -> Int4,
         user_id -> Int4,
         word_id -> Int4,
         sentence -> Text,
         is_pending -> Bool,
-        is_mined -> Bool,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        mining_batch_id -> Nullable<Int4>,
     }
 }
 
@@ -36,11 +45,12 @@ table! {
     }
 }
 
-joinable!(sentences -> users (user_id));
+joinable!(mining_batches -> users (user_id));
 joinable!(sentences -> words (word_id));
 joinable!(words -> users (user_id));
 
 allow_tables_to_appear_in_same_query!(
+    mining_batches,
     sentences,
     users,
     words,

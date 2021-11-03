@@ -1,6 +1,7 @@
 use crate::models::user::User;
 use crate::models::word::Word;
 use crate::schema::sentences;
+use chrono::NaiveDateTime;
 use diesel::result::Error;
 use diesel::{PgConnection, RunQueryDsl};
 use rocket::serde::Serialize;
@@ -14,7 +15,9 @@ pub struct Sentence {
     pub word_id: i32,
     pub sentence: String,
     pub is_pending: bool,
-    pub is_mined: bool,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+    pub mining_batch_id: Option<i32>,
 }
 
 #[derive(Insertable)]

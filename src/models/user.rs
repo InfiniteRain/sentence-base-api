@@ -8,6 +8,7 @@ use crate::schema::sentences::columns::is_pending;
 use crate::schema::users;
 use crate::schema::words::dsl::words;
 use bcrypt::{hash, verify, DEFAULT_COST};
+use chrono::NaiveDateTime;
 use diesel;
 use diesel::expression::count::count_star;
 use diesel::pg::PgConnection;
@@ -28,8 +29,18 @@ pub struct User {
     #[serde(skip_serializing)]
     pub hash: String,
     #[serde(skip_serializing)]
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
     pub token_generation: i32,
 }
+
+/*        id -> Int4,
+username -> Text,
+email -> Text,
+hash -> Text,
+created_at -> Timestamptz,
+updated_at -> Timestamptz,
+token_generation -> Int4,*/
 
 #[derive(Insertable)]
 #[table_name = "users"]
