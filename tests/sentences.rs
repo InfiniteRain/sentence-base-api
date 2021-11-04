@@ -1,7 +1,8 @@
 use common::*;
-use diesel::QueryDsl;
 use diesel::RunQueryDsl;
 use diesel::{BelongingToDsl, ExpressionMethods};
+use diesel::{PgConnection, QueryDsl};
+use itertools::__std_iter::FromIterator;
 use rocket::http::Status;
 use rocket::local::blocking::Client;
 use rocket::serde::json::Value;
@@ -15,9 +16,14 @@ use sentence_base::routes::sentences::{AddSentenceResponse, BatchResponse};
 use sentence_base::schema::sentences as schema_sentences;
 use sentence_base::schema::sentences::dsl::sentences as dsl_sentences;
 use sentence_base::schema::sentences::{
-    id as schema_sentences_id, is_pending, mining_batch_id as schema_sentences_mining_batch_id,
+    id as schema_sentences_id, is_pending as schema_sentences_is_pending,
+    mining_batch_id as schema_sentences_mining_batch_id,
 };
+use sentence_base::schema::words as schema_words;
+use sentence_base::schema::words::dsl::words as dsl_words;
+use sentence_base::schema::words::is_mined as schema_words_is_mined;
 use serde_json::{json, Map};
+use std::collections::HashSet;
 
 mod common;
 
@@ -253,8 +259,8 @@ fn add_should_not_count_non_pending_sentences_towards_the_limit() {
 
     assert!(is_sentences_pending_limit_reached);
 
-    diesel::update(dsl_sentences.filter(is_pending.eq(true)))
-        .set(is_pending.eq(false))
+    diesel::update(dsl_sentences.filter(schema_sentences_is_pending.eq(true)))
+        .set(schema_sentences_is_pending.eq(false))
         .execute(&database_connection)
         .expect("query should execute");
 
@@ -294,7 +300,7 @@ fn get_should_return_empty_sentences_when_none_are_pending() {
     assert_eq!(add_response.status(), Status::Ok);
 
     diesel::update(dsl_sentences.filter(schema_sentences_id.eq(1)))
-        .set(is_pending.eq(false))
+        .set(schema_sentences_is_pending.eq(false))
         .execute(&database_connection)
         .unwrap();
 
@@ -314,7 +320,7 @@ fn get_should_return_pending_sentences_in_the_correct_order() {
         create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
     let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
 
-    commit_test_words(&client, &access_token);
+    mine_test_words(&client, &access_token);
 
     let response = send_get_request_with_auth(&client, "/sentences", &access_token);
     assert_eq!(response.status(), Status::Ok);
@@ -467,7 +473,7 @@ fn new_batch_should_work() {
     let (client, user, database_connection) =
         create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
     let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
-    let sentence_ids = commit_test_words(&client, &access_token);
+    let sentence_ids = mine_test_words(&client, &access_token);
 
     let response = send_post_request_with_json_and_auth(
         &client,
@@ -483,15 +489,95 @@ fn new_batch_should_work() {
 
     let sentence_batch: Vec<Sentence> = schema_sentences::table
         .filter(schema_sentences_mining_batch_id.eq(deserialized_response.get_data().batch_id))
+        .filter(schema_sentences_is_pending.eq(false))
         .get_results(&database_connection)
         .expect("should execute find sentence batch query");
 
-    assert_eq!(sentence_batch.len(), TEST_WORDS.len())
+    let words: Vec<Word> = schema_words::table
+        .filter(schema_words_is_mined.eq(true))
+        .get_results(&database_connection)
+        .expect("should execute find words query");
 
-    // todo: check here if the sentences have all the correct data (is_pending = true & correct mining_batch_id)
+    let test_words_set: HashSet<(&str, &str)> = HashSet::from_iter(TEST_WORDS.iter().cloned());
+
+    assert_eq!(sentence_batch.len(), TEST_WORDS.len());
+    assert_eq!(words.len(), test_words_set.len());
 }
 
-fn commit_test_words(client: &Client, access_token: &String) -> Vec<i32> {
+#[test]
+fn new_batch_rejects_when_submitting_the_same_batch_twice() {
+    let (client, user, _) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+    let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
+    let sentence_ids = mine_test_words(&client, &access_token);
+
+    let first_response = send_post_request_with_json_and_auth(
+        &client,
+        "/sentences/batches",
+        &access_token,
+        json!({ "sentences": sentence_ids }),
+    );
+    assert_eq!(first_response.status(), Status::Ok);
+
+    let second_response = send_post_request_with_json_and_auth(
+        &client,
+        "/sentences/batches",
+        &access_token,
+        json!({ "sentences": sentence_ids }),
+    );
+    assert_eq!(second_response.status(), Status::UnprocessableEntity);
+    let json = response_to_json(second_response);
+    assert_fail(&json, "Invalid Sentences Provided");
+}
+
+#[test]
+fn add_should_set_is_mined_to_false_when_mined_again() {
+    let (client, user, database_connection) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+    let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
+    let sentence_ids = mine_test_words(&client, &access_token);
+
+    let first_word_query = get_mined_word_from_sentence_id(&database_connection, sentence_ids[0]);
+    assert_eq!(first_word_query.is_mined, false);
+
+    let batch_response = send_post_request_with_json_and_auth(
+        &client,
+        "/sentences/batches",
+        &access_token,
+        json!({ "sentences": sentence_ids }),
+    );
+    assert_eq!(batch_response.status(), Status::Ok);
+
+    let second_word_query = get_mined_word_from_sentence_id(&database_connection, sentence_ids[0]);
+    assert_eq!(second_word_query.is_mined, true);
+
+    let mine_response = send_post_request_with_json_and_auth(
+        &client,
+        "/sentences",
+        &access_token,
+        json!({
+            "dictionary_form": TEST_WORDS[0].0,
+            "reading": TEST_WORDS[0].1,
+            "sentence": format!("some sentence with {}", TEST_WORDS[0].0),
+        }),
+    );
+    assert_eq!(mine_response.status(), Status::Ok);
+
+    let third_word_query = get_mined_word_from_sentence_id(&database_connection, sentence_ids[0]);
+    assert_eq!(third_word_query.is_mined, false);
+}
+
+fn get_mined_word_from_sentence_id(database_connection: &PgConnection, sentence_id: i32) -> Word {
+    let row: (Sentence, Word) = schema_sentences::table
+        .filter(schema_sentences_id.eq(sentence_id))
+        .inner_join(dsl_words)
+        .first(database_connection)
+        .expect("should execute the find sentence query");
+
+    row.1
+}
+
+fn mine_test_words(client: &Client, access_token: &String) -> Vec<i32> {
     let mut sentence_ids: Vec<i32> = vec![];
 
     for (dictionary_form, reading) in TEST_WORDS {
@@ -515,7 +601,3 @@ fn commit_test_words(client: &Client, access_token: &String) -> Vec<i32> {
 
     sentence_ids
 }
-
-// todo: cannot submit same batch twice
-// todo: mined -> unmined if the same word got mined
-// todo: commit with duplicate id's

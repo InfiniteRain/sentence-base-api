@@ -12,6 +12,7 @@ use crate::schema::sentences::{
 };
 use crate::schema::users;
 use crate::schema::words::dsl::words as dsl_words;
+use crate::schema::words::{id as schema_words_id, is_mined as schema_words_is_mined};
 use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::NaiveDateTime;
 use diesel;
@@ -260,6 +261,18 @@ impl User {
                 schema_sentences_is_pending.eq(false),
                 schema_sentences_mining_batch_id.eq(mining_batch.id),
             ))
+            .execute(database_connection)
+            .map_err(CommitSentencesError::DatabaseError)?;
+
+        let batch_words = dsl_words.filter(
+            schema_words_id.eq(any(rows
+                .into_iter()
+                .map(|(_, word)| word.id)
+                .collect::<Vec<i32>>())),
+        );
+
+        diesel::update(batch_words)
+            .set(schema_words_is_mined.eq(true))
             .execute(database_connection)
             .map_err(CommitSentencesError::DatabaseError)?;
 

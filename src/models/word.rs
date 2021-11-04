@@ -49,6 +49,7 @@ impl Word {
         match potential_word {
             Ok(mut found_word) => {
                 found_word.frequency += 1;
+                found_word.is_mined = false;
                 found_word.save_changes::<Word>(database_connection)
             }
             Err(_) => diesel::insert_into(words::table)
