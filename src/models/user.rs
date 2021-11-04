@@ -5,7 +5,9 @@ use crate::jwt::{extract_access_token_from_header, validate_token, TokenError, T
 use crate::models::mining_batch::MiningBatch;
 use crate::models::sentence::Sentence;
 use crate::models::word::Word;
-use crate::schema::mining_batches::id as schema_mining_batches_id;
+use crate::schema::mining_batches::{
+    created_at as schema_mining_batches_created_at, id as schema_mining_batches_id,
+};
 use crate::schema::sentences::dsl::sentences as dsl_sentences;
 use crate::schema::sentences::{
     id as schema_sentences_id, is_pending as schema_sentences_is_pending,
@@ -238,7 +240,7 @@ impl User {
             .collect::<Vec<UserSentenceEntry>>())
     }
 
-    pub fn commit_batch(
+    pub fn new_mining_batch(
         &self,
         database_connection: &PgConnection,
         sentence_ids: &[i32],
@@ -280,7 +282,7 @@ impl User {
         Ok(mining_batch)
     }
 
-    pub fn get_batch_by_id(
+    pub fn get_mining_batch_by_id(
         &self,
         database_connection: &PgConnection,
         mining_batch_id: i32,
@@ -289,5 +291,16 @@ impl User {
             .filter(schema_mining_batches_id.eq(mining_batch_id))
             .get_result(database_connection)
             .ok()
+    }
+
+    pub fn get_all_mining_batches(
+        &self,
+        database_connection: &PgConnection,
+    ) -> Result<Vec<MiningBatch>, Error> {
+        let mining_batches: Vec<MiningBatch> = MiningBatch::belonging_to(self)
+            .order(schema_mining_batches_created_at.desc())
+            .get_results(database_connection)?;
+
+        Ok(mining_batches)
     }
 }

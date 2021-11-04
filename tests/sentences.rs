@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use common::*;
 use diesel::RunQueryDsl;
 use diesel::{BelongingToDsl, ExpressionMethods};
@@ -6,6 +7,7 @@ use itertools::__std_iter::FromIterator;
 use rocket::http::Status;
 use rocket::local::blocking::Client;
 use rocket::serde::json::Value;
+use rocket::serde::{Deserialize, Serialize};
 use sentence_base::helpers::get_maximum_pending_sentences;
 use sentence_base::jwt::TokenType;
 use sentence_base::models::sentence::Sentence;
@@ -510,14 +512,7 @@ fn new_batch_rejects_when_submitting_the_same_batch_twice() {
         create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
     let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
     let sentence_ids = mine_test_words(&client, &access_token);
-
-    let first_response = send_post_request_with_json_and_auth(
-        &client,
-        "/sentences/batches",
-        &access_token,
-        json!({ "sentences": sentence_ids }),
-    );
-    assert_eq!(first_response.status(), Status::Ok);
+    new_batch_from_words(&client, &access_token, &sentence_ids);
 
     let second_response = send_post_request_with_json_and_auth(
         &client,
@@ -540,13 +535,7 @@ fn add_should_set_is_mined_to_false_when_mined_again() {
     let (_, first_word_query) = get_mined_from_id(&database_connection, sentence_ids[0]);
     assert_eq!(first_word_query.is_mined, false);
 
-    let batch_response = send_post_request_with_json_and_auth(
-        &client,
-        "/sentences/batches",
-        &access_token,
-        json!({ "sentences": sentence_ids }),
-    );
-    assert_eq!(batch_response.status(), Status::Ok);
+    new_batch_from_words(&client, &access_token, &sentence_ids);
 
     let (_, second_word_query) = get_mined_from_id(&database_connection, sentence_ids[0]);
     assert_eq!(second_word_query.is_mined, true);
@@ -605,13 +594,7 @@ fn get_batch_should_not_work_for_non_owned_batches() {
     let new_user_access_token = generate_jwt_token_for_user(&new_user, TokenType::Access);
 
     let sentence_ids = mine_test_words(&client, &access_token);
-    let new_batch_response = send_post_request_with_json_and_auth(
-        &client,
-        "/sentences/batches",
-        &access_token,
-        json!({ "sentences": sentence_ids }),
-    );
-    assert_eq!(new_batch_response.status(), Status::Ok);
+    new_batch_from_words(&client, &access_token, &sentence_ids);
 
     let user_get_batch_response =
         send_get_request_with_auth(&client, "/sentences/batches/1", &access_token);
@@ -630,14 +613,7 @@ fn get_batch_should_work() {
         create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
     let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
     let sentence_ids = mine_test_words(&client, &access_token);
-
-    let new_batch_response = send_post_request_with_json_and_auth(
-        &client,
-        "/sentences/batches",
-        &access_token,
-        json!({ "sentences": sentence_ids }),
-    );
-    assert_eq!(new_batch_response.status(), Status::Ok);
+    new_batch_from_words(&client, &access_token, &sentence_ids);
 
     let user_get_batch_response =
         send_get_request_with_auth(&client, "/sentences/batches/1", &access_token);
@@ -662,7 +638,64 @@ fn get_batch_should_work() {
     }
 }
 
-// -------
+#[test]
+fn get_all_batches_should_validate() {
+    let (client, _) = create_client();
+
+    let response = send_get_request(&client, "/sentences/batches");
+    assert_eq!(response.status(), Status::Unauthorized);
+    let json = response_to_json(response);
+    assert_fail(&json, "No Token Provided");
+}
+
+#[test]
+fn get_mining_batches_should_work() {
+    let (client, user, _) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+    let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
+
+    let first_get_batches_response =
+        send_get_request_with_auth(&client, "/sentences/batches", &access_token);
+    let json = response_to_json(first_get_batches_response);
+    assert_success(&json);
+    let first_batch = get_all_batches_from_json(&json);
+
+    assert_eq!(first_batch.len(), 0);
+
+    let second_batch_sentence_ids = mine_test_words(&client, &access_token);
+    new_batch_from_words(&client, &access_token, &second_batch_sentence_ids);
+
+    let second_get_batches_response =
+        send_get_request_with_auth(&client, "/sentences/batches", &access_token);
+    let json = response_to_json(second_get_batches_response);
+    let second_batch = get_all_batches_from_json(&json);
+
+    assert_eq!(second_batch.len(), 1);
+    assert_eq!(second_batch[0].id, 1);
+
+    let third_batch_sentence_ids = mine_test_words(&client, &access_token);
+    new_batch_from_words(&client, &access_token, &third_batch_sentence_ids);
+
+    let third_get_batches_response =
+        send_get_request_with_auth(&client, "/sentences/batches", &access_token);
+    let json = response_to_json(third_get_batches_response);
+    let third_batch = get_all_batches_from_json(&json);
+
+    assert_eq!(third_batch.len(), 2);
+    assert_eq!(third_batch[0].id, 2);
+    assert_eq!(third_batch[1].id, 1);
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct GetAllBatchesResponse {
+    pub batches: Vec<MiningBatchEntry>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct MiningBatchEntry {
+    pub id: i32,
+    pub created_at: NaiveDateTime,
+}
 
 fn get_mined_from_id(database_connection: &PgConnection, sentence_id: i32) -> (Sentence, Word) {
     schema_sentences::table
@@ -670,6 +703,21 @@ fn get_mined_from_id(database_connection: &PgConnection, sentence_id: i32) -> (S
         .inner_join(dsl_words)
         .first::<(Sentence, Word)>(database_connection)
         .expect("should execute the find sentence query")
+}
+
+fn new_batch_from_words(client: &Client, access_token: &String, sentence_ids: &Vec<i32>) {
+    let new_batch_response = send_post_request_with_json_and_auth(
+        &client,
+        "/sentences/batches",
+        &access_token,
+        json!({ "sentences": sentence_ids }),
+    );
+    assert_eq!(
+        new_batch_response.status(),
+        Status::Ok,
+        "{:?}",
+        sentence_ids
+    );
 }
 
 fn mine_test_words(client: &Client, access_token: &String) -> Vec<i32> {
@@ -695,4 +743,10 @@ fn mine_test_words(client: &Client, access_token: &String) -> Vec<i32> {
     }
 
     sentence_ids
+}
+
+fn get_all_batches_from_json(json: &Value) -> Vec<MiningBatchEntry> {
+    let deserialized_response: SuccessResponse<GetAllBatchesResponse> =
+        serde_json::from_value(json.clone()).expect("should deserialize response");
+    deserialized_response.get_data().batches.clone()
 }

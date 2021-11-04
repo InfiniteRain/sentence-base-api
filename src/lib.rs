@@ -38,6 +38,7 @@ pub fn rocket(database_url: &str) -> Rocket<Build> {
                 routes::sentences::get,
                 routes::sentences::new_batch,
                 routes::sentences::get_batch,
+                routes::sentences::get_all_batches,
             ],
         )
         .register("/", catchers![routes::catcher::default])

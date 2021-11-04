@@ -46,6 +46,8 @@ table! {
 }
 
 joinable!(mining_batches -> users (user_id));
+joinable!(sentences -> mining_batches (mining_batch_id));
+joinable!(sentences -> users (user_id));
 joinable!(sentences -> words (word_id));
 joinable!(words -> users (user_id));
 

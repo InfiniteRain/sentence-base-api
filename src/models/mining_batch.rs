@@ -15,8 +15,10 @@ use rocket::serde::Serialize;
 #[table_name = "mining_batches"]
 pub struct MiningBatch {
     pub id: i32,
+    #[serde(skip_serializing)]
     pub user_id: i32,
     pub created_at: NaiveDateTime,
+    #[serde(skip_serializing)]
     pub updated_at: NaiveDateTime,
 }
 

@@ -1,6 +1,7 @@
 use crate::database::DbConnection;
 use crate::field_validator::validate;
 use crate::frequency_list::JpFrequencyList;
+use crate::models::mining_batch::MiningBatch;
 use crate::models::sentence::Sentence;
 use crate::models::user::{CommitSentencesError, User, UserSentenceEntry};
 use crate::models::word::Word;
@@ -116,7 +117,7 @@ pub fn new_batch(
     let sentences: Vec<i32> = new_batch_data.sentences.into_iter().collect();
 
     let mining_batch = user
-        .commit_batch(&database_connection, &sentences)
+        .new_mining_batch(&database_connection, &sentences)
         .map_err(|err| match err {
             CommitSentencesError::DatabaseError(err) => DB_ERROR_MAP_FN(err),
             CommitSentencesError::InvalidSentencesProvided => ErrorResponse::fail(
@@ -143,7 +144,7 @@ pub fn get_batch(
     frequency_list: &State<JpFrequencyList>,
 ) -> ResponseResult<GetBatchResponse> {
     let mining_batch = user
-        .get_batch_by_id(&database_connection, mining_batch_id)
+        .get_mining_batch_by_id(&database_connection, mining_batch_id)
         .ok_or_else(|| ErrorResponse::fail("Batch Not Found".to_string(), Status::NotFound))?;
 
     let sentences = mining_batch
@@ -151,4 +152,21 @@ pub fn get_batch(
         .map_err(DB_ERROR_MAP_FN)?;
 
     Ok(SuccessResponse::new(GetBatchResponse { sentences }))
+}
+
+#[derive(Serialize)]
+pub struct GetAllBatchesResponse {
+    pub batches: Vec<MiningBatch>,
+}
+
+#[get("/sentences/batches")]
+pub fn get_all_batches(
+    database_connection: DbConnection,
+    user: User,
+) -> ResponseResult<GetAllBatchesResponse> {
+    let batches = user
+        .get_all_mining_batches(&database_connection)
+        .map_err(DB_ERROR_MAP_FN)?;
+
+    Ok(SuccessResponse::new(GetAllBatchesResponse { batches }))
 }
