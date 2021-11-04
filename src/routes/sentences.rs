@@ -17,7 +17,7 @@ const DB_ERROR_MAP_FN: fn(Error) -> ErrorResponse =
     |_| ErrorResponse::error("Unexpected Error".to_string(), Status::InternalServerError);
 
 #[derive(Validate, Deserialize)]
-pub struct AddSentenceRequest {
+pub struct NewSentenceRequest {
     #[validate(length(min = 1))]
     dictionary_form: String,
     #[validate(length(min = 1))]
@@ -27,22 +27,22 @@ pub struct AddSentenceRequest {
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct AddSentenceResponse {
+pub struct NewSentenceResponse {
     pub sentence: UserSentenceEntry,
 }
 
-#[post("/sentences", format = "json", data = "<sentence_request>")]
-pub fn add(
-    sentence_request: Json<AddSentenceRequest>,
+#[post("/sentences", format = "json", data = "<new_sentence_request>")]
+pub fn new(
+    new_sentence_request: Json<NewSentenceRequest>,
     database_connection: DbConnection,
     user: User,
     frequency_list: &State<JpFrequencyList>,
-) -> ResponseResult<AddSentenceResponse> {
-    let sentence_data = validate(sentence_request)?;
+) -> ResponseResult<NewSentenceResponse> {
+    let new_sentence_data = validate(new_sentence_request)?;
 
-    let dictionary_form = sentence_data.dictionary_form.trim().to_string();
-    let reading = sentence_data.reading.trim().to_string();
-    let sentence = sentence_data.sentence.trim().to_string();
+    let dictionary_form = new_sentence_data.dictionary_form.trim().to_string();
+    let reading = new_sentence_data.reading.trim().to_string();
+    let sentence = new_sentence_data.sentence.trim().to_string();
 
     let is_limit_reached = user
         .is_pending_sentence_limit_reached(&database_connection)
@@ -61,7 +61,7 @@ pub fn add(
     let sentence_entry = Sentence::new(&database_connection, &user, &word_entry, &sentence)
         .map_err(DB_ERROR_MAP_FN)?;
 
-    Ok(SuccessResponse::new(AddSentenceResponse {
+    Ok(SuccessResponse::new(NewSentenceResponse {
         sentence: UserSentenceEntry::new(&word_entry, &sentence_entry, frequency_list),
     }))
 }

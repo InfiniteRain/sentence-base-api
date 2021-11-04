@@ -12,7 +12,7 @@ use sentence_base::models::sentence::Sentence;
 use sentence_base::models::user::User;
 use sentence_base::models::word::Word;
 use sentence_base::responses::SuccessResponse;
-use sentence_base::routes::sentences::{AddSentenceResponse, GetBatchResponse, NewBatchResponse};
+use sentence_base::routes::sentences::{GetBatchResponse, NewBatchResponse, NewSentenceResponse};
 use sentence_base::schema::sentences as schema_sentences;
 use sentence_base::schema::sentences::dsl::sentences as dsl_sentences;
 use sentence_base::schema::sentences::{
@@ -41,7 +41,7 @@ const TEST_WORDS: [(&'static str, &'static str); 10] = [
 ];
 
 #[test]
-fn add_should_require_auth() {
+fn new_should_require_auth() {
     let (client, _) = create_client();
 
     let response = send_post_request_with_json(
@@ -58,7 +58,7 @@ fn add_should_require_auth() {
 }
 
 #[test]
-fn add_should_validate() {
+fn new_should_validate() {
     let (client, user, _) =
         create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
     let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
@@ -87,7 +87,7 @@ fn add_should_validate() {
 }
 
 #[test]
-fn add_should_result_with_a_word_and_a_sentence_added() {
+fn new_should_result_with_a_word_and_a_sentence_added() {
     let (client, user, database_connection) =
         create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
     let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
@@ -131,7 +131,7 @@ fn add_should_result_with_a_word_and_a_sentence_added() {
 
     let json = response_to_json(response);
     assert_success(&json);
-    let deserialized_response: SuccessResponse<AddSentenceResponse> =
+    let deserialized_response: SuccessResponse<NewSentenceResponse> =
         serde_json::from_value(json).expect("should deserialize response");
     let deserialized_data = deserialized_response.get_data();
 
@@ -146,7 +146,7 @@ fn add_should_result_with_a_word_and_a_sentence_added() {
 }
 
 #[test]
-fn add_should_increase_frequency_on_duplicate() {
+fn new_should_increase_frequency_on_duplicate() {
     let (client, user, database_connection) =
         create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
     let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
@@ -195,7 +195,7 @@ fn add_should_increase_frequency_on_duplicate() {
 }
 
 #[test]
-fn add_should_not_add_more_sentences_over_the_limit() {
+fn new_should_not_add_more_sentences_over_the_limit() {
     let (client, user, _) =
         create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
     let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
@@ -232,7 +232,7 @@ fn add_should_not_add_more_sentences_over_the_limit() {
 }
 
 #[test]
-fn add_should_not_count_non_pending_sentences_towards_the_limit() {
+fn new_should_not_count_non_pending_sentences_towards_the_limit() {
     let (client, user, database_connection) =
         create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
     let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
@@ -688,7 +688,7 @@ fn mine_test_words(client: &Client, access_token: &String) -> Vec<i32> {
         );
         assert_eq!(response.status(), Status::Ok);
         let json = response_to_json(response);
-        let deserialized_response: SuccessResponse<AddSentenceResponse> =
+        let deserialized_response: SuccessResponse<NewSentenceResponse> =
             serde_json::from_value(json).expect("should deserialize response");
 
         sentence_ids.push(deserialized_response.get_data().sentence.sentence_id);
