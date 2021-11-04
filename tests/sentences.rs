@@ -12,7 +12,7 @@ use sentence_base::models::sentence::Sentence;
 use sentence_base::models::user::User;
 use sentence_base::models::word::Word;
 use sentence_base::responses::SuccessResponse;
-use sentence_base::routes::sentences::{AddSentenceResponse, BatchResponse};
+use sentence_base::routes::sentences::{AddSentenceResponse, GetBatchResponse, NewBatchResponse};
 use sentence_base::schema::sentences as schema_sentences;
 use sentence_base::schema::sentences::dsl::sentences as dsl_sentences;
 use sentence_base::schema::sentences::{
@@ -484,7 +484,7 @@ fn new_batch_should_work() {
     assert_eq!(response.status(), Status::Ok);
     let json = response_to_json(response);
     assert_success(&json);
-    let deserialized_response: SuccessResponse<BatchResponse> =
+    let deserialized_response: SuccessResponse<NewBatchResponse> =
         serde_json::from_value(json).expect("should deserialize response");
 
     let sentence_batch: Vec<Sentence> = schema_sentences::table
@@ -537,7 +537,7 @@ fn add_should_set_is_mined_to_false_when_mined_again() {
     let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
     let sentence_ids = mine_test_words(&client, &access_token);
 
-    let first_word_query = get_mined_word_from_sentence_id(&database_connection, sentence_ids[0]);
+    let (_, first_word_query) = get_mined_from_id(&database_connection, sentence_ids[0]);
     assert_eq!(first_word_query.is_mined, false);
 
     let batch_response = send_post_request_with_json_and_auth(
@@ -548,7 +548,7 @@ fn add_should_set_is_mined_to_false_when_mined_again() {
     );
     assert_eq!(batch_response.status(), Status::Ok);
 
-    let second_word_query = get_mined_word_from_sentence_id(&database_connection, sentence_ids[0]);
+    let (_, second_word_query) = get_mined_from_id(&database_connection, sentence_ids[0]);
     assert_eq!(second_word_query.is_mined, true);
 
     let mine_response = send_post_request_with_json_and_auth(
@@ -563,18 +563,113 @@ fn add_should_set_is_mined_to_false_when_mined_again() {
     );
     assert_eq!(mine_response.status(), Status::Ok);
 
-    let third_word_query = get_mined_word_from_sentence_id(&database_connection, sentence_ids[0]);
+    let (_, third_word_query) = get_mined_from_id(&database_connection, sentence_ids[0]);
     assert_eq!(third_word_query.is_mined, false);
 }
 
-fn get_mined_word_from_sentence_id(database_connection: &PgConnection, sentence_id: i32) -> Word {
-    let row: (Sentence, Word) = schema_sentences::table
+#[test]
+fn get_batch_should_require_auth() {
+    let (client, _) = create_client();
+
+    let response = send_get_request(&client, "/sentences/batches/1");
+    assert_eq!(response.status(), Status::Unauthorized);
+    let json = response_to_json(response);
+    assert_fail(&json, "No Token Provided");
+}
+
+#[test]
+fn get_batch_should_fail_on_non_existent_batch() {
+    let (client, user, _) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+    let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
+
+    let response = send_get_request_with_auth(&client, "/sentences/batches/1", &access_token);
+    assert_eq!(response.status(), Status::NotFound);
+    let json = response_to_json(response);
+    assert_fail(&json, "Batch Not Found");
+}
+
+#[test]
+fn get_batch_should_not_work_for_non_owned_batches() {
+    let (client, user, database_connection) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+    let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
+
+    let new_user = User::register(
+        &database_connection,
+        "user2".to_string(),
+        "user2@domain.com".to_string(),
+        "password".to_string(),
+    )
+    .expect("should register user");
+    let new_user_access_token = generate_jwt_token_for_user(&new_user, TokenType::Access);
+
+    let sentence_ids = mine_test_words(&client, &access_token);
+    let new_batch_response = send_post_request_with_json_and_auth(
+        &client,
+        "/sentences/batches",
+        &access_token,
+        json!({ "sentences": sentence_ids }),
+    );
+    assert_eq!(new_batch_response.status(), Status::Ok);
+
+    let user_get_batch_response =
+        send_get_request_with_auth(&client, "/sentences/batches/1", &access_token);
+    assert_eq!(user_get_batch_response.status(), Status::Ok);
+
+    let new_user_get_batch_response =
+        send_get_request_with_auth(&client, "/sentences/batches/1", &new_user_access_token);
+    assert_eq!(new_user_get_batch_response.status(), Status::NotFound);
+    let json = response_to_json(new_user_get_batch_response);
+    assert_fail(&json, "Batch Not Found");
+}
+
+#[test]
+fn get_batch_should_work() {
+    let (client, user, database_connection) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+    let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
+    let sentence_ids = mine_test_words(&client, &access_token);
+
+    let new_batch_response = send_post_request_with_json_and_auth(
+        &client,
+        "/sentences/batches",
+        &access_token,
+        json!({ "sentences": sentence_ids }),
+    );
+    assert_eq!(new_batch_response.status(), Status::Ok);
+
+    let user_get_batch_response =
+        send_get_request_with_auth(&client, "/sentences/batches/1", &access_token);
+    assert_eq!(user_get_batch_response.status(), Status::Ok);
+    let json = response_to_json(user_get_batch_response);
+    assert_success(&json);
+
+    let deserialized_response: SuccessResponse<GetBatchResponse> =
+        serde_json::from_value(json).expect("should deserialize response");
+    let deserialized_data = deserialized_response.get_data();
+
+    assert_eq!(deserialized_data.sentences.len(), TEST_WORDS.len());
+
+    for sentence in &deserialized_data.sentences {
+        let (sentence_entry, word_entry) =
+            get_mined_from_id(&database_connection, sentence.sentence_id);
+
+        assert_eq!(sentence.sentence, sentence_entry.sentence);
+        assert_eq!(sentence.dictionary_form, word_entry.dictionary_form);
+        assert_eq!(sentence.reading, word_entry.reading);
+        assert_eq!(sentence.mining_frequency, word_entry.frequency);
+    }
+}
+
+// -------
+
+fn get_mined_from_id(database_connection: &PgConnection, sentence_id: i32) -> (Sentence, Word) {
+    schema_sentences::table
         .filter(schema_sentences_id.eq(sentence_id))
         .inner_join(dsl_words)
-        .first(database_connection)
-        .expect("should execute the find sentence query");
-
-    row.1
+        .first::<(Sentence, Word)>(database_connection)
+        .expect("should execute the find sentence query")
 }
 
 fn mine_test_words(client: &Client, access_token: &String) -> Vec<i32> {

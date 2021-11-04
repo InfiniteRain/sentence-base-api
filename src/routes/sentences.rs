@@ -95,25 +95,25 @@ fn validate_sentences_length<T>(hash_set: &HashSet<T>) -> Result<(), ValidationE
 }
 
 #[derive(Validate, Deserialize)]
-pub struct BatchRequest {
+pub struct NewBatchRequest {
     #[validate(custom = "validate_sentences_length")]
     sentences: HashSet<i32>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct BatchResponse {
+pub struct NewBatchResponse {
     pub batch_id: i32,
 }
 
-#[post("/sentences/batches", format = "json", data = "<batch_request>")]
+#[post("/sentences/batches", format = "json", data = "<new_batch_request>")]
 pub fn new_batch(
-    batch_request: Json<BatchRequest>,
+    new_batch_request: Json<NewBatchRequest>,
     database_connection: DbConnection,
     user: User,
-) -> ResponseResult<BatchResponse> {
-    let batch_data = validate(batch_request)?;
+) -> ResponseResult<NewBatchResponse> {
+    let new_batch_data = validate(new_batch_request)?;
 
-    let sentences: Vec<i32> = batch_data.sentences.into_iter().collect();
+    let sentences: Vec<i32> = new_batch_data.sentences.into_iter().collect();
 
     let mining_batch = user
         .commit_batch(&database_connection, &sentences)
@@ -125,7 +125,30 @@ pub fn new_batch(
             ),
         })?;
 
-    Ok(SuccessResponse::new(BatchResponse {
+    Ok(SuccessResponse::new(NewBatchResponse {
         batch_id: mining_batch.id,
     }))
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GetBatchResponse {
+    pub sentences: Vec<UserSentenceEntry>,
+}
+
+#[get("/sentences/batches/<mining_batch_id>")]
+pub fn get_batch(
+    mining_batch_id: i32,
+    database_connection: DbConnection,
+    user: User,
+    frequency_list: &State<JpFrequencyList>,
+) -> ResponseResult<GetBatchResponse> {
+    let mining_batch = user
+        .get_batch_by_id(&database_connection, mining_batch_id)
+        .ok_or_else(|| ErrorResponse::fail("Batch Not Found".to_string(), Status::NotFound))?;
+
+    let sentences = mining_batch
+        .get_sentences(&database_connection, frequency_list)
+        .map_err(DB_ERROR_MAP_FN)?;
+
+    Ok(SuccessResponse::new(GetBatchResponse { sentences }))
 }

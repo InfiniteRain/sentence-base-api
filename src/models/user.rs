@@ -5,6 +5,7 @@ use crate::jwt::{extract_access_token_from_header, validate_token, TokenError, T
 use crate::models::mining_batch::MiningBatch;
 use crate::models::sentence::Sentence;
 use crate::models::word::Word;
+use crate::schema::mining_batches::id as schema_mining_batches_id;
 use crate::schema::sentences::dsl::sentences as dsl_sentences;
 use crate::schema::sentences::{
     id as schema_sentences_id, is_pending as schema_sentences_is_pending,
@@ -279,21 +280,14 @@ impl User {
         Ok(mining_batch)
     }
 
-    pub fn get_sentence_batch(
+    pub fn get_batch_by_id(
         &self,
         database_connection: &PgConnection,
-        batch: &MiningBatch,
-        frequency_list: &JpFrequencyList,
-    ) -> Result<Vec<UserSentenceEntry>, Error> {
-        let rows: Vec<(Sentence, Word)> = Sentence::belonging_to(batch)
-            .inner_join(dsl_words)
-            .load(database_connection)?;
-
-        let sentences = rows
-            .into_iter()
-            .map(|(sentence, word)| UserSentenceEntry::new(&word, &sentence, frequency_list))
-            .collect();
-
-        Ok(sentences)
+        mining_batch_id: i32,
+    ) -> Option<MiningBatch> {
+        MiningBatch::belonging_to(self)
+            .filter(schema_mining_batches_id.eq(mining_batch_id))
+            .get_result(database_connection)
+            .ok()
     }
 }

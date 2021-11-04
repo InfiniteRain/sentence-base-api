@@ -1,5 +1,10 @@
-use crate::models::user::User;
+use crate::diesel::prelude::*;
+use crate::frequency_list::JpFrequencyList;
+use crate::models::sentence::Sentence;
+use crate::models::user::{User, UserSentenceEntry};
+use crate::models::word::Word;
 use crate::schema::mining_batches;
+use crate::schema::words::dsl::words as dsl_words;
 use chrono::NaiveDateTime;
 use diesel::result::Error;
 use diesel::{PgConnection, RunQueryDsl};
@@ -26,5 +31,22 @@ impl MiningBatch {
         diesel::insert_into(mining_batches::table)
             .values(NewMining { user_id: user.id })
             .get_result::<MiningBatch>(database_connection)
+    }
+
+    pub fn get_sentences(
+        &self,
+        database_connection: &PgConnection,
+        frequency_list: &JpFrequencyList,
+    ) -> Result<Vec<UserSentenceEntry>, Error> {
+        let rows: Vec<(Sentence, Word)> = Sentence::belonging_to(self)
+            .inner_join(dsl_words)
+            .load(database_connection)?;
+
+        let sentences = rows
+            .into_iter()
+            .map(|(sentence, word)| UserSentenceEntry::new(&word, &sentence, frequency_list))
+            .collect();
+
+        Ok(sentences)
     }
 }
