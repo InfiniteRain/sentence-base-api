@@ -19,6 +19,6 @@ ALTER TABLE sentences
 ALTER TABLE sentences
   ADD CONSTRAINT fk_sentences_mining_batch_id
   FOREIGN KEY (mining_batch_id)
-  REFERENCES users(id);
+  REFERENCES mining_batches(id);
 ALTER TABLE sentences
   DROP COLUMN is_mined;
