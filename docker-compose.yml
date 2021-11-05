@@ -6,6 +6,15 @@ services:
       - "8000:8000"
     depends_on:
       - db-prod
+    environment:
+      - DATABASE_URL=$DATABASE_URL
+      - JWT_SECRET=$JWT_SECRET
+      - HASHING_COST=$HASHING_COST
+      - JWT_ACCESS_TOKEN_EXPIRY_TIME=$JWT_ACCESS_TOKEN_EXPIRY_TIME
+      - JWT_REFRESH_TOKEN_EXPIRY_TIME=$JWT_REFRESH_TOKEN_EXPIRY_TIME
+      - MAXIMUM_PENDING_SENTENCES=$MAXIMUM_PENDING_SENTENCES
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
   db-prod:
     image: postgres:11-alpine
     restart: always
