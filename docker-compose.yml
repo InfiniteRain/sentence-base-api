@@ -1,5 +1,11 @@
 version: "3.1"
 services:
+  web-api:
+    build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db-prod
   db-prod:
     image: postgres:11-alpine
     restart: always
