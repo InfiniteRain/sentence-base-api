@@ -29,6 +29,7 @@ pub fn rocket(database_url: &str) -> Rocket<Build> {
         .mount(
             "/",
             routes![
+                routes::root::get,
                 routes::analyzer::analyze,
                 routes::authentication::register,
                 routes::authentication::login,
