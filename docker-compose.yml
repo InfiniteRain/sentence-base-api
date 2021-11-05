@@ -1,4 +1,4 @@
-version: "3.1"
+version: "3.8"
 services:
   web-api:
     build: .
@@ -15,6 +15,7 @@ services:
       - MAXIMUM_PENDING_SENTENCES=$MAXIMUM_PENDING_SENTENCES
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    restart: always
   db-prod:
     image: postgres:11-alpine
     restart: always
@@ -24,11 +25,7 @@ services:
       POSTGRES_DB: rocket
     ports:
       - "5432:5432"
-  db-test:
-    image: postgres:11-alpine
-    restart: always
-    environment:
-      POSTGRES_PASSWORD: rocket
-      POSTGRES_USER: rocket
-    ports:
-      - "5430:5432"
+    volumes:
+      - sentence-base-db:/var/lib/postgresql/data/
+volumes:
+  sentence-base-db:
