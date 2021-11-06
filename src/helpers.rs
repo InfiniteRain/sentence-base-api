@@ -10,7 +10,7 @@ pub fn get_access_token_expiry_time() -> u64 {
 }
 
 pub fn get_refresh_token_expiry_time() -> u64 {
-    get_int_env_with_default("JWT_REFRESH_TOKEN_EXPIRY_TIME", 43800)
+    get_int_env_with_default("JWT_REFRESH_TOKEN_EXPIRY_TIME", 15770000)
 }
 
 pub fn get_maximum_pending_sentences() -> u64 {
