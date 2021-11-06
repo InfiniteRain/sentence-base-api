@@ -132,6 +132,55 @@ fn register_should_fail_on_duplicate_data() {
 }
 
 #[test]
+fn register_should_fail_on_duplicate_data_in_different_case() {
+    let (client, _) = create_client();
+    let registration_response = send_post_request_with_json(
+        &client,
+        "/auth/register",
+        json!({
+            "username": TEST_USERNAME,
+            "email": TEST_EMAIL,
+            "password": TEST_PASSWORD
+        }),
+    );
+
+    assert_eq!(registration_response.status(), Status::Ok);
+
+    let username_duplicate_response = send_post_request_with_json(
+        &client,
+        "/auth/register",
+        json!({
+            "username": TEST_USERNAME.to_uppercase(),
+            "email": "different@domain.com",
+            "password": TEST_PASSWORD.to_uppercase()
+        }),
+    );
+
+    assert_eq!(username_duplicate_response.status(), Status::Conflict);
+    let username_duplicate_json = response_to_json(username_duplicate_response);
+    assert_fail(&username_duplicate_json, "Validation Error");
+    assert_fail_reasons(
+        &username_duplicate_json,
+        vec!["duplicate username".to_string()],
+    );
+
+    let email_duplicate_response = send_post_request_with_json(
+        &client,
+        "/auth/register",
+        json!({
+            "username": "different_test",
+            "email": TEST_EMAIL.to_uppercase(),
+            "password": TEST_PASSWORD.to_uppercase()
+        }),
+    );
+
+    assert_eq!(email_duplicate_response.status(), Status::Conflict);
+    let email_duplicate_json = response_to_json(email_duplicate_response);
+    assert_fail(&email_duplicate_json, "Validation Error");
+    assert_fail_reasons(&email_duplicate_json, vec!["duplicate email".to_string()]);
+}
+
+#[test]
 fn login_should_validate() {
     let (client, _) = create_client();
     let response = send_post_request_with_json(
@@ -207,6 +256,23 @@ fn login_should_return_a_jwt() {
 
     assert_jwt_token(access_token, TokenType::Access);
     assert_jwt_token(refresh_token, TokenType::Refresh);
+}
+
+#[test]
+fn login_should_work_with_creds_in_different_case() {
+    let (client, _, _) = create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+
+    let response = send_post_request_with_json(
+        &client,
+        "/auth/login",
+        json!({
+            "email": TEST_EMAIL.to_uppercase(),
+            "password": TEST_PASSWORD
+        }),
+    );
+    assert_eq!(response.status(), Status::Ok);
+    let json = response_to_json(response);
+    assert_success(&json);
 }
 
 #[test]

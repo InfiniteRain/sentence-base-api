@@ -24,8 +24,8 @@ pub fn register(
 ) -> ResponseResult<User> {
     let register_data = validate(register_request)?;
 
-    let username = register_data.username.trim();
-    let email = register_data.email.trim();
+    let username = register_data.username.trim().to_lowercase();
+    let email = register_data.email.trim().to_lowercase();
 
     let registration_result = User::register(
         &database_connection,
@@ -69,7 +69,7 @@ pub fn login(
 ) -> ResponseResult<LoginResponse> {
     let login_data = validate(login_request)?;
 
-    let email = login_data.email.trim().to_string();
+    let email = login_data.email.trim().to_lowercase().to_string();
     let password = login_data.password;
 
     let user =
