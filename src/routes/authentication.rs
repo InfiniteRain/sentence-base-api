@@ -29,9 +29,9 @@ pub fn register(
 
     let registration_result = User::register(
         &database_connection,
-        username.to_string(),
-        email.to_string(),
-        register_data.password.to_string(),
+        username,
+        email,
+        register_data.password,
     );
 
     match registration_result {
@@ -69,7 +69,7 @@ pub fn login(
 ) -> ResponseResult<LoginResponse> {
     let login_data = validate(login_request)?;
 
-    let email = login_data.email.trim().to_lowercase().to_string();
+    let email = login_data.email.trim().to_lowercase();
     let password = login_data.password;
 
     let user =
