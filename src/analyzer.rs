@@ -18,20 +18,33 @@ pub fn analyze_sentence(sentence: &str) -> Vec<Morpheme> {
             node.stat as i32 != mecab::MECAB_BOS_NODE && node.stat as i32 != mecab::MECAB_EOS_NODE
         })
         .map(|node| {
-            let morpheme = (&(node.surface)[..(node.length as usize)]);
-            let features = node.feature.split(',').collect::<Vec<&str>>();
-            let dictionary_form = features
-                .get(features.len().wrapping_sub(3))
-                .unwrap_or(&morpheme);
-            let reading = features
-                .get(features.len().wrapping_sub(2))
-                .unwrap_or(&morpheme);
-
-            Morpheme {
-                morpheme: morpheme.to_string(),
-                dictionary_form: dictionary_form.to_string(),
-                reading: reading.to_string(),
-            }
+            (
+                (&(node.surface)[..(node.length as usize)]).to_string(),
+                node.feature
+                    .split(',')
+                    .map(|feature| feature.to_string())
+                    .collect::<Vec<String>>(),
+            )
+        })
+        .map(|(morpheme, mut features)| {
+            (
+                morpheme,
+                features.remove(features.len().wrapping_sub(3)),
+                features.remove(features.len().wrapping_sub(2)),
+            )
+        })
+        .map(|(morpheme, dictionary_form, reading)| Morpheme {
+            dictionary_form: if dictionary_form == "*" {
+                morpheme.clone()
+            } else {
+                dictionary_form
+            },
+            reading: if reading == "*" {
+                morpheme.clone()
+            } else {
+                reading
+            },
+            morpheme,
         })
         .collect()
 }
