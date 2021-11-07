@@ -87,6 +87,21 @@ pub fn get(
     }))
 }
 
+#[delete("/sentences/<sentence_id>")]
+pub fn delete(sentence_id: i32, database_connection: DbConnection, user: User) -> ResponseResult {
+    let pending_sentence = user
+        .get_pending_sentence_by_id(&database_connection, sentence_id)
+        .ok_or_else(|| {
+            ErrorResponse::fail("Pending Sentence Not Found".to_string(), Status::NotFound)
+        })?;
+
+    pending_sentence
+        .delete(&database_connection)
+        .map_err(DB_ERROR_MAP_FN)?;
+
+    Ok(SuccessResponse::new(()))
+}
+
 fn validate_sentences_length<T>(hash_set: &HashSet<T>) -> Result<(), ValidationError> {
     if hash_set.is_empty() {
         return Err(ValidationError::new("empty_set"));

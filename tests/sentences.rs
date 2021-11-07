@@ -686,6 +686,122 @@ fn get_mining_batches_should_work() {
     assert_eq!(third_batch[1].id, 1);
 }
 
+#[test]
+fn delete_should_require_auth() {
+    let (client, _) = create_client();
+
+    let response = send_delete_request(&client, "/sentences/1");
+    assert_eq!(response.status(), Status::Unauthorized);
+    let json = response_to_json(response);
+    assert_fail(&json, "No Token Provided");
+}
+
+#[test]
+fn delete_should_fail_on_non_existence_sentence() {
+    let (client, user, _) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+    let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
+
+    let response = send_delete_request_with_auth(&client, "/sentences/1", &access_token);
+    assert_eq!(response.status(), Status::NotFound);
+    let json = response_to_json(response);
+    assert_fail(&json, "Pending Sentence Not Found");
+}
+
+#[test]
+fn delete_should_fail_in_non_owned_sentence() {
+    let (client, user, database_connection) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+    let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
+
+    let new_user = User::register(
+        &database_connection,
+        "user2".to_string(),
+        "user2@domain.com".to_string(),
+        "password".to_string(),
+    )
+    .expect("should register user");
+    let new_user_access_token = generate_jwt_token_for_user(&new_user, TokenType::Access);
+
+    let sentence_ids = mine_test_words(&client, &access_token);
+    let url = format!("/sentences/{}", sentence_ids[0]);
+
+    let new_user_response = send_delete_request_with_auth(&client, &url, &new_user_access_token);
+    assert_eq!(new_user_response.status(), Status::NotFound);
+    let new_user_json = response_to_json(new_user_response);
+    assert_fail(&new_user_json, "Pending Sentence Not Found");
+
+    let user_response = send_delete_request_with_auth(&client, &url, &access_token);
+    assert_eq!(user_response.status(), Status::Ok);
+    let user_json = response_to_json(user_response);
+    assert_success(&user_json);
+}
+
+#[test]
+fn delete_should_work() {
+    let (client, user, _) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+    let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
+    let sentence_ids = mine_test_words(&client, &access_token);
+
+    let pending_sentences_request =
+        send_get_request_with_auth(&client, "/sentences", &access_token);
+    assert_eq!(pending_sentences_request.status(), Status::Ok);
+    let pending_sentences_json = response_to_json(pending_sentences_request);
+    assert_success(&pending_sentences_json);
+    let sentences_data = pending_sentences_json
+        .get("data")
+        .unwrap()
+        .as_object()
+        .unwrap();
+    assert_word_order(
+        &sentences_data,
+        vec![
+            ("魑魅魍魎", "チミモウリョウ"),
+            ("魑魅魍魎", "チミモウリョウ"),
+            ("魑魅魍魎", "チミモウリョウ"),
+            ("勝ち星", "カチボシ"),
+            ("勝ち星", "カチボシ"),
+            ("家", "イエ"),
+            ("学校", "ガッコウ"),
+            ("犬", "イヌ"),
+            ("猫", "ネコ"),
+            ("ペン", "ペン"),
+        ],
+    );
+
+    let url = format!("/sentences/{}", sentence_ids[0]);
+    let delete_response = send_delete_request_with_auth(&client, &url, &access_token);
+    assert_eq!(delete_response.status(), Status::Ok);
+    let delete_json = response_to_json(delete_response);
+    assert_success(&delete_json);
+
+    let second_pending_sentences_request =
+        send_get_request_with_auth(&client, "/sentences", &access_token);
+    assert_eq!(second_pending_sentences_request.status(), Status::Ok);
+    let second_pending_sentences_json = response_to_json(second_pending_sentences_request);
+    assert_success(&second_pending_sentences_json);
+    let second_sentences_data = second_pending_sentences_json
+        .get("data")
+        .unwrap()
+        .as_object()
+        .unwrap();
+    assert_word_order(
+        &second_sentences_data,
+        vec![
+            ("魑魅魍魎", "チミモウリョウ"),
+            ("魑魅魍魎", "チミモウリョウ"),
+            ("魑魅魍魎", "チミモウリョウ"),
+            ("勝ち星", "カチボシ"),
+            ("勝ち星", "カチボシ"),
+            ("家", "イエ"),
+            ("学校", "ガッコウ"),
+            ("犬", "イヌ"),
+            ("猫", "ネコ"),
+        ],
+    );
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct GetAllBatchesResponse {
     pub batches: Vec<MiningBatchEntry>,

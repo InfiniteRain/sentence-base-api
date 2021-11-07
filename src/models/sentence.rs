@@ -45,4 +45,10 @@ impl Sentence {
             })
             .get_result::<Sentence>(database_connection)
     }
+
+    pub fn delete(&self, database_connection: &PgConnection) -> Result<(), Error> {
+        diesel::delete(self).execute(database_connection)?;
+
+        Ok(())
+    }
 }

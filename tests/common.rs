@@ -133,6 +133,21 @@ pub fn send_get_request_with_auth<'a>(
         .dispatch()
 }
 
+pub fn send_delete_request<'a>(client: &'a Client, url: &'a str) -> LocalResponse<'a> {
+    client.delete(url).dispatch()
+}
+
+pub fn send_delete_request_with_auth<'a>(
+    client: &'a Client,
+    url: &'a str,
+    token: &String,
+) -> LocalResponse<'a> {
+    client
+        .delete(url)
+        .header(Header::new("Authorization", format!("Bearer {}", &token)))
+        .dispatch()
+}
+
 pub fn response_to_json(response: LocalResponse) -> Value {
     response.into_json::<Value>().expect("body must be json")
 }

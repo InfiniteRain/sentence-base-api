@@ -282,6 +282,18 @@ impl User {
         Ok(mining_batch)
     }
 
+    pub fn get_pending_sentence_by_id(
+        &self,
+        database_connection: &PgConnection,
+        pending_sentence_id: i32,
+    ) -> Option<Sentence> {
+        Sentence::belonging_to(self)
+            .filter(schema_sentences_id.eq(pending_sentence_id))
+            .filter(schema_sentences_is_pending.eq(true))
+            .get_result(database_connection)
+            .ok()
+    }
+
     pub fn get_mining_batch_by_id(
         &self,
         database_connection: &PgConnection,

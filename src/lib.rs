@@ -36,6 +36,7 @@ pub fn rocket(database_url: &str) -> Rocket<Build> {
                 routes::authentication::me,
                 routes::sentences::new,
                 routes::sentences::get,
+                routes::sentences::delete,
                 routes::sentences::new_batch,
                 routes::sentences::get_batch,
                 routes::sentences::get_all_batches,
