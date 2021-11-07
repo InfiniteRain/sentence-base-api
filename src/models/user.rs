@@ -11,7 +11,7 @@ use crate::schema::mining_batches::{
 use crate::schema::sentences::dsl::sentences as dsl_sentences;
 use crate::schema::sentences::{
     id as schema_sentences_id, is_pending as schema_sentences_is_pending,
-    mining_batch_id as schema_sentences_mining_batch_id,
+    mining_batch_id as schema_sentences_mining_batch_id, user_id as schema_sentences_user_id,
 };
 use crate::schema::users;
 use crate::schema::words::dsl::words as dsl_words;
@@ -260,10 +260,13 @@ impl User {
             .map_err(CommitSentencesError::DatabaseError)?;
 
         diesel::update(dsl_sentences.filter(schema_sentences_id.eq(any(sentence_ids))))
-            .set((
-                schema_sentences_is_pending.eq(false),
-                schema_sentences_mining_batch_id.eq(mining_batch.id),
-            ))
+            .set(schema_sentences_mining_batch_id.eq(mining_batch.id))
+            .execute(database_connection)
+            .map_err(CommitSentencesError::DatabaseError)?;
+
+        diesel::update(dsl_sentences.filter(schema_sentences_user_id.eq(self.id)))
+            .filter(schema_sentences_is_pending.eq(true))
+            .set(schema_sentences_is_pending.eq(false))
             .execute(database_connection)
             .map_err(CommitSentencesError::DatabaseError)?;
 

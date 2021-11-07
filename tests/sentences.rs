@@ -507,6 +507,42 @@ fn new_batch_should_work() {
 }
 
 #[test]
+fn new_batch_should_set_pending_to_false_for_those_that_were_not_selected() {
+    let (client, user, database_connection) =
+        create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
+    let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
+    let sentence_ids = mine_test_words(&client, &access_token);
+
+    let id_sub_set: Vec<i32> = sentence_ids[0..5].iter().map(|id| *id).collect();
+    let new_batch_response = send_post_request_with_json_and_auth(
+        &client,
+        "/sentences/batches",
+        &access_token,
+        json!({ "sentences": id_sub_set }),
+    );
+    assert_eq!(new_batch_response.status(), Status::Ok);
+    let new_batch_json = response_to_json(new_batch_response);
+    assert_success(&new_batch_json);
+
+    let get_pending_sentences_response =
+        send_get_request_with_auth(&client, "/sentences", &access_token);
+    assert_eq!(get_pending_sentences_response.status(), Status::Ok);
+    let get_pending_sentences_json = response_to_json(get_pending_sentences_response);
+    assert_success(&get_pending_sentences_json);
+    let pending_sentences = get_pending_sentences_json
+        .get("data")
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .get("sentences")
+        .unwrap()
+        .as_array()
+        .unwrap();
+
+    assert_eq!(pending_sentences.len(), 0);
+}
+
+#[test]
 fn new_batch_rejects_when_submitting_the_same_batch_twice() {
     let (client, user, _) =
         create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
