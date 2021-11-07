@@ -709,7 +709,7 @@ fn delete_should_fail_on_non_existence_sentence() {
 }
 
 #[test]
-fn delete_should_fail_in_non_owned_sentence() {
+fn delete_should_fail_on_non_owned_sentence() {
     let (client, user, database_connection) =
         create_client_and_register_user(TEST_USERNAME, TEST_EMAIL, TEST_PASSWORD);
     let access_token = generate_jwt_token_for_user(&user, TokenType::Access);
