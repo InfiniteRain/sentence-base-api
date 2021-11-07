@@ -10,6 +10,31 @@ pub struct Morpheme {
     pub reading: String,
 }
 
+pub fn dictionary_form_to_reading(dictionary_form: &str, default: String) -> String {
+    let node_option = Tagger::new("")
+        .parse_to_node(dictionary_form)
+        .iter_next()
+        .find(|node| {
+            node.stat as i32 != mecab::MECAB_BOS_NODE && node.stat as i32 != mecab::MECAB_EOS_NODE
+        });
+
+    let node = match node_option {
+        None => return default,
+        Some(node) => node,
+    };
+
+    let features = node
+        .feature
+        .split(',')
+        .map(|feature| feature.to_string())
+        .collect::<Vec<String>>();
+
+    match features.get(features.len().wrapping_sub(2)) {
+        None => default,
+        Some(reading) => reading.clone(),
+    }
+}
+
 pub fn analyze_sentence(sentence: &str) -> Vec<Morpheme> {
     Tagger::new("")
         .parse_to_node(sentence)
@@ -37,12 +62,12 @@ pub fn analyze_sentence(sentence: &str) -> Vec<Morpheme> {
             dictionary_form: if dictionary_form == "*" {
                 morpheme.clone()
             } else {
-                dictionary_form
+                dictionary_form.clone()
             },
             reading: if reading == "*" {
                 morpheme.clone()
             } else {
-                reading
+                dictionary_form_to_reading(&dictionary_form, reading)
             },
             morpheme,
         })
