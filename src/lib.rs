@@ -30,7 +30,7 @@ pub fn rocket(database_url: &str) -> Rocket<Build> {
             "/",
             routes![
                 routes::analyzer::analyze,
-                routes::authentication::register,
+                // routes::authentication::register,
                 routes::authentication::login,
                 routes::authentication::refresh,
                 routes::authentication::me,

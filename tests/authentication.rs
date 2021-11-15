@@ -11,6 +11,7 @@ use serde_json::json;
 mod common;
 
 #[test]
+#[ignore]
 fn register_should_validate() {
     let (client, _) = create_client();
     let response = send_post_request_with_json(
@@ -39,6 +40,7 @@ fn register_should_validate() {
 }
 
 #[test]
+#[ignore]
 fn register_should_add_new_user() {
     let (client, database_url) = create_client();
     let response = send_post_request_with_json(
@@ -83,6 +85,7 @@ fn register_should_add_new_user() {
 }
 
 #[test]
+#[ignore]
 fn register_should_fail_on_duplicate_data() {
     let (client, _) = create_client();
     let registration_response = send_post_request_with_json(
@@ -132,6 +135,7 @@ fn register_should_fail_on_duplicate_data() {
 }
 
 #[test]
+#[ignore]
 fn register_should_fail_on_duplicate_data_in_different_case() {
     let (client, _) = create_client();
     let registration_response = send_post_request_with_json(
