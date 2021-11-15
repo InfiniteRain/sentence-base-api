@@ -8,6 +8,7 @@ pub struct Morpheme {
     pub morpheme: String,
     pub dictionary_form: String,
     pub reading: String,
+    pub pos: String,
 }
 
 pub fn dictionary_form_to_reading(dictionary_form: &str, default: String) -> String {
@@ -54,11 +55,12 @@ pub fn analyze_sentence(sentence: &str) -> Vec<Morpheme> {
         .map(|(morpheme, mut features)| {
             (
                 morpheme,
+                features.remove(0),
                 features.remove(features.len().wrapping_sub(3)),
                 features.remove(features.len().wrapping_sub(2)),
             )
         })
-        .map(|(morpheme, dictionary_form, reading)| Morpheme {
+        .map(|(morpheme, pos, dictionary_form, reading)| Morpheme {
             dictionary_form: if dictionary_form == "*" {
                 morpheme.clone()
             } else {
@@ -70,6 +72,7 @@ pub fn analyze_sentence(sentence: &str) -> Vec<Morpheme> {
                 dictionary_form_to_reading(&dictionary_form, reading)
             },
             morpheme,
+            pos,
         })
         .collect()
 }
