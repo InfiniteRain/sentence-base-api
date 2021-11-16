@@ -71,18 +71,16 @@ fn analyze_should_morphemalize() {
         .as_array()
         .expect("'morphemes' should be an array");
 
-    let expected_result: [(&str, &str, &str, &str); 5] = [
-        ("これ", "名詞", "これ", "コレ"),
-        ("は", "助詞", "は", "ハ"),
-        ("ペン", "名詞", "ペン", "ペン"),
-        ("です", "助動詞", "です", "デス"),
-        ("。", "記号", "。", "。"),
+    let expected_result: [(&str, &str, &str); 5] = [
+        ("これ", "これ", "コレ"),
+        ("は", "は", "ハ"),
+        ("ペン", "ペン", "ペン"),
+        ("です", "です", "デス"),
+        ("。", "。", "。"),
     ];
 
     let mut index = 0;
-    for (expected_morpheme, expected_pos, expected_dictionary_form, expected_reading) in
-        expected_result
-    {
+    for (expected_morpheme, expected_dictionary_form, expected_reading) in expected_result {
         let morpheme_element = morphemes
             .get(index)
             .expect(&format!("index {} should exist", index))
@@ -94,12 +92,6 @@ fn analyze_should_morphemalize() {
             .expect("should include 'morpheme' field")
             .as_str()
             .expect("'morpheme' should be a string");
-
-        let pos = morpheme_element
-            .get("pos")
-            .expect("should include 'pos' field")
-            .as_str()
-            .expect("'pos' should be a string");
 
         let dictionary_form = morpheme_element
             .get("dictionary_form")
@@ -114,7 +106,6 @@ fn analyze_should_morphemalize() {
             .expect("'reading' should be a string");
 
         assert_eq!(morpheme, expected_morpheme);
-        assert_eq!(pos, expected_pos);
         assert_eq!(dictionary_form, expected_dictionary_form);
         assert_eq!(reading, expected_reading);
 
